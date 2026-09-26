@@ -1,6 +1,15 @@
-const STORAGE_KEY = 'fieldnote-pharmacy-demo-v1';
+const STORAGE_KEY = 'hamsaahrx-pharmacy-demo-v1';
+const LEGACY_STORAGE_KEY = 'fieldnote-pharmacy-demo-v1';
+const INR_PER_LEGACY_UNIT = 84;
 
 const initialData = {
+  currency: 'legacy',
+  employees: [
+    { id: 'EMP-001', name: 'Maya Chen', email: 'maya@hamsaahrx.demo', password: 'maya123', role: 'Admin', active: true },
+    { id: 'EMP-002', name: 'Asha Patel', email: 'asha@hamsaahrx.demo', password: 'asha123', role: 'Pharmacist', active: true },
+    { id: 'EMP-003', name: 'Leo Martin', email: 'leo@hamsaahrx.demo', password: 'leo123', role: 'Technician', active: true },
+    { id: 'EMP-004', name: 'Nia Brooks', email: 'nia@hamsaahrx.demo', password: 'nia123', role: 'Cashier', active: true }
+  ],
   patients: [
     { id: 'PT-2048', name: 'Olivia Martin', age: 34, phone: '(415) 555-0142', allergies: 'Penicillin', lastVisit: 'Today, 10:42 AM', initials: 'OM' },
     { id: 'PT-2047', name: 'Noah Williams', age: 62, phone: '(415) 555-0186', allergies: 'None recorded', lastVisit: 'Today, 9:18 AM', initials: 'NW' },
@@ -40,29 +49,37 @@ const initialData = {
     { id: 'PO-1041', supplier: 'WellCare Distribution', status: 'Sent', created: 'Sep 23, 2026', items: [{ drugId: 'RX-003', name: 'Metformin 850mg', quantity: 60, cost: 4.25 }], createdBy: 'Maya Chen' }
   ],
     sales: [
-      { id: 'INV-8291', patient: 'Noah Williams', time: '11:24 AM', items: 2, total: 31.05, payment: 'Card', status: 'Paid' },
-      { id: 'INV-8290', patient: 'Walk-in customer', time: '11:08 AM', items: 1, total: 7.83, payment: 'Cash', status: 'Paid' },
-      { id: 'INV-8289', patient: 'Sofia Nguyen', time: '10:56 AM', items: 3, total: 42.16, payment: 'Insurance', status: 'Paid' },
-      { id: 'INV-8288', patient: 'Walk-in customer', time: '10:31 AM', items: 2, total: 19.45, payment: 'Card', status: 'Paid' }
+      { id: 'INV-8291', patient: 'Noah Williams', time: '11:24 AM', items: 2, total: 31.05, payment: 'Card', status: 'Paid', employeeId: 'EMP-004' },
+      { id: 'INV-8290', patient: 'Walk-in customer', time: '11:08 AM', items: 1, total: 7.83, payment: 'Cash', status: 'Paid', employeeId: 'EMP-004' },
+      { id: 'INV-8289', patient: 'Sofia Nguyen', time: '10:56 AM', items: 3, total: 42.16, payment: 'Insurance', status: 'Paid', employeeId: 'EMP-004' },
+      { id: 'INV-8288', patient: 'Walk-in customer', time: '10:31 AM', items: 2, total: 19.45, payment: 'Card', status: 'Paid', employeeId: 'EMP-004' }
     ],
   cart: []
 };
 
 function loadData() {
   try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (stored && stored.drugs && stored.patients && stored.purchaseOrders) return { ...initialData, ...stored };
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY));
+    if (stored && stored.drugs && stored.patients && stored.purchaseOrders) {
+      const restored = { ...structuredClone(initialData), ...stored };
+      migrateCurrency(restored);
+      migrateAccountEmails(restored);
+      return restored;
+    }
   } catch { /* A malformed demo save should not block the app. */ }
-  return structuredClone(initialData);
+  const fresh = structuredClone(initialData);
+  migrateCurrency(fresh);
+  migrateAccountEmails(fresh);
+  return fresh;
 }
 
 const data = loadData();
-const state = { view: 'overview', role: 'Admin', inventoryQuery: '', patientQuery: '', doctorQuery: '', supplierQuery: '', prescriptionFilter: 'All prescriptions', poFilter: 'All orders', globalQuery: '' };
+const state = { view: 'overview', role: 'Admin', employeeId: null, inventoryQuery: '', patientQuery: '', doctorQuery: '', supplierQuery: '', prescriptionFilter: 'All prescriptions', poFilter: 'All orders', globalQuery: '' };
 const permissions = {
-  Admin: ['overview', 'prescriptions', 'inventory', 'purchase-orders', 'patients', 'doctors', 'suppliers', 'reports'],
+  Admin: ['overview', 'pos', 'prescriptions', 'inventory', 'purchase-orders', 'patients', 'doctors', 'suppliers', 'reports', 'employees'],
   Pharmacist: ['overview', 'prescriptions', 'inventory', 'purchase-orders', 'patients', 'doctors', 'reports'],
   Technician: ['overview', 'prescriptions', 'inventory', 'purchase-orders', 'patients', 'doctors', 'reports'],
-  Cashier: ['overview', 'pos', 'inventory', 'patients', 'doctors', 'reports']
+  Cashier: ['overview', 'pos', 'inventory', 'reports']
 };
 const headings = {
   overview: ['Your pharmacy at a glance', 'Here’s what’s happening at your pharmacy today.'],
@@ -73,17 +90,38 @@ const headings = {
   patients: ['Patients', 'A clear view of the people in your care.'],
   doctors: ['Doctors', 'Referring clinicians and their pharmacy activity.'],
   suppliers: ['Suppliers', 'Manage your approved distribution partners.'],
-  reports: ['Reports & analytics', 'A useful read on sales and inventory performance.']
+  reports: ['Reports & analytics', 'A useful read on sales and inventory performance.'],
+  employees: ['Employee access', 'Manage the people who can sign in to Ham-SaAh Rx.']
 };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
-const money = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value) || 0);
-const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(value) || 0);
+const save = () => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  localStorage.removeItem(LEGACY_STORAGE_KEY);
+};
 const pendingCount = () => data.prescriptions.filter((item) => item.status === 'Pending review').length;
 const lowStock = () => data.drugs.filter((drug) => drug.onHand <= drug.reorder);
 const initialsFor = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join('');
 const drugFor = (id) => data.drugs.find((drug) => drug.id === id);
+
+function migrateCurrency(record) {
+  if (record.currency === 'INR') return;
+  record.drugs?.forEach((drug) => { drug.price = Math.round(drug.price * INR_PER_LEGACY_UNIT * 100) / 100; });
+  record.sales?.forEach((sale) => {
+    sale.total = Math.round(sale.total * INR_PER_LEGACY_UNIT * 100) / 100;
+    sale.employeeId ||= 'EMP-004';
+  });
+  record.purchaseOrders?.forEach((order) => order.items?.forEach((item) => { item.cost = Math.round(item.cost * INR_PER_LEGACY_UNIT * 100) / 100; }));
+  record.currency = 'INR';
+}
+
+function migrateAccountEmails(record) {
+  record.employees?.forEach((employee) => {
+    employee.email = employee.email.replace(/@fieldnote\.demo$/i, '@hamsaahrx.demo');
+  });
+}
 
 function notify(message) {
   const toast = document.createElement('div');
@@ -109,17 +147,19 @@ function statusBadge(status) {
 function setHeading() {
   const [title, subtitle] = headings[state.view] || headings.overview;
   const isOverview = state.view === 'overview';
-  $('#page-title').textContent = isOverview ? `Good morning, ${state.role === 'Admin' ? 'Maya' : state.role}` : title;
+  const employee = data.employees.find((item) => item.id === state.employeeId);
+  $('#page-title').textContent = isOverview ? `Good morning, ${employee?.name.split(' ')[0] || state.role}` : title;
   $('#page-subtitle').textContent = isOverview ? subtitle : state.role === 'Technician' && state.view === 'purchase-orders' ? 'Add stock needs to the queue for admin review.' : subtitle;
   $('#breadcrumb-current').textContent = isOverview ? 'Overview' : title;
   $('#page-eyebrow').textContent = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date()).toUpperCase();
   const headingActions = $('#heading-actions');
-  if (state.view === 'pos' && state.role === 'Cashier') headingActions.innerHTML = `<button class="button" data-action="clear-cart">Clear basket</button>`;
+  if (state.view === 'pos' && ['Admin', 'Cashier'].includes(state.role)) headingActions.innerHTML = `<button class="button" data-action="clear-cart">Clear basket</button>`;
   else if (state.view === 'inventory' && ['Admin', 'Technician', 'Pharmacist'].includes(state.role)) headingActions.innerHTML = `<button class="button button-primary" data-action="receive-stock">＋ Receive stock</button>`;
   else if (state.view === 'patients' && ['Admin', 'Pharmacist', 'Technician'].includes(state.role)) headingActions.innerHTML = `<button class="button button-primary" data-action="add-patient">＋ Add patient</button>`;
   else if (state.view === 'doctors' && ['Admin', 'Pharmacist'].includes(state.role)) headingActions.innerHTML = `<button class="button button-primary" data-action="add-doctor">＋ Add doctor</button>`;
   else if (state.view === 'suppliers' && state.role === 'Admin') headingActions.innerHTML = `<button class="button button-primary" data-action="add-supplier">＋ Add supplier</button>`;
   else if (state.view === 'purchase-orders' && ['Admin', 'Pharmacist', 'Technician'].includes(state.role)) headingActions.innerHTML = `<button class="button button-primary" data-action="new-po">＋ New purchase order</button>`;
+  else if (state.view === 'employees' && state.role === 'Admin') headingActions.innerHTML = `<button class="button button-primary" data-action="add-employee">＋ Add employee</button>`;
   else headingActions.innerHTML = '';
 }
 
@@ -129,13 +169,25 @@ function updateNavigation() {
     button.hidden = !allowed.includes(button.dataset.view);
     button.classList.toggle('active', button.dataset.view === state.view);
   });
+  $$('.nav-label', $('.primary-nav')).forEach((label) => {
+    let item = label.nextElementSibling;
+    let hasVisibleItem = false;
+    while (item && !item.classList.contains('nav-label')) {
+      if (item.matches('.nav-item') && !item.hidden) hasVisibleItem = true;
+      item = item.nextElementSibling;
+    }
+    label.hidden = !hasVisibleItem;
+  });
   if (!allowed.includes(state.view)) state.view = 'overview';
   $('#prescription-count').textContent = pendingCount();
   $('#prescription-count').hidden = pendingCount() === 0;
   $('#stock-count').textContent = lowStock().length;
   $('#stock-count').hidden = lowStock().length === 0;
-  $('#profile-role').textContent = state.role === 'Admin' ? 'Administrator' : state.role;
-  $('#role-select').value = state.role;
+  const employee = data.employees.find((item) => item.id === state.employeeId);
+  $('#profile-name').textContent = employee?.name || 'Signed out';
+  $('#profile-role').textContent = employee?.role || '';
+  $('#profile-initials').textContent = initialsFor(employee?.name || '');
+  $('#session-role').textContent = state.role;
 }
 
 function render() {
@@ -150,10 +202,23 @@ function render() {
     patients: renderPatients,
     doctors: renderDoctors,
     suppliers: renderSuppliers,
-    reports: renderReports
+    reports: renderReports,
+    employees: renderEmployees
   };
   $('#content').innerHTML = (views[state.view] || renderOverview)();
-  if (state.view === 'prescriptions' && state.role !== 'Pharmacist') {
+  if (state.view === 'pos' && state.role === 'Cashier') {
+    const patientSelect = $('#pos-patient', $('#content'));
+    if (patientSelect) {
+      const customerName = document.createElement('input');
+      customerName.id = 'pos-patient';
+      customerName.type = 'text';
+      customerName.value = 'Walk-in customer';
+      customerName.autocomplete = 'off';
+      patientSelect.replaceWith(customerName);
+      $('label[for="pos-patient"]', $('#content')).textContent = 'Customer name (optional)';
+    }
+  }
+  if (state.view === 'prescriptions' && !['Admin', 'Pharmacist'].includes(state.role)) {
     $$('[data-action="approve-rx"], [data-action="reject-rx"], [data-action="dispense-rx"]', $('#content')).forEach((button) => button.remove());
   }
   if (state.view === 'purchase-orders' && state.role === 'Admin') {
@@ -178,30 +243,33 @@ function metric(label, value, foot, icon, color, trend = '') {
 
 function renderOverview() {
   const alerts = lowStock().slice(0, 3);
-  const recentSales = data.sales.slice(0, 4);
+  const visibleSales = state.role === 'Cashier' ? data.sales.filter((sale) => sale.employeeId === state.employeeId) : data.sales;
+  const recentSales = visibleSales.slice(0, 4);
   const isTechnician = state.role === 'Technician';
   const metrics = isTechnician
     ? `${metric('Products tracked', String(data.drugs.length), 'across active batches', 'Rx', 'green')}${metric('Items to reorder', String(lowStock().length).padStart(2, '0'), 'below reorder threshold', '!', 'orange')}${metric('Open purchase orders', String(data.purchaseOrders.filter((order) => order.status !== 'Sent').length), 'draft or awaiting approval', '⇄', 'blue')}${metric('Units on hand', String(data.drugs.reduce((sum, drug) => sum + drug.onHand, 0)), 'across the dispensary', '▤', 'lime')}`
     : state.role === 'Cashier'
-      ? `${metric('Shift sales', money(1284.5), 'today · Northside', '↗', 'green', '↑ 12.8%')}${metric('Transactions', '38', 'this shift', '▣', 'blue', '↑ 4')}${metric('Avg. basket', '$24.18', 'vs. $22.60 last week', '◷', 'lime', '↑ 7.0%')}${metric('Prescriptions', '6', 'ready for pickup', 'Rx', 'orange')}`
-      : `${metric('Today’s sales', money(1284.5), 'vs. previous Saturday', '↗', 'green', '↑ 12.8%')}${metric('Prescriptions', '38', '6 awaiting pickup', 'Rx', 'blue', '↑ 4')}${metric('Items to reorder', String(lowStock().length).padStart(2, '0'), 'below reorder threshold', '!', 'orange', '')}${metric('Avg. basket', '$24.18', 'vs. $22.60 last week', '◷', 'lime', '↑ 7.0%')}`;
+      ? `${metric('Shift sales', money(107898), 'today · Northside', '↗', 'green', '↑ 12.8%')}${metric('Transactions', '38', 'this shift', '▣', 'blue', '↑ 4')}${metric('Avg. basket', money(2031.12), 'vs. last week', '◷', 'lime', '↑ 7.0%')}${metric('Returns', '0', 'awaiting review', '↶', 'orange')}`
+      : `${metric('Today’s sales', money(107898), 'vs. previous Saturday', '↗', 'green', '↑ 12.8%')}${metric('Prescriptions', '38', '6 awaiting pickup', 'Rx', 'blue', '↑ 4')}${metric('Items to reorder', String(lowStock().length).padStart(2, '0'), 'below reorder threshold', '!', 'orange', '')}${metric('Avg. basket', money(2031.12), 'vs. last week', '◷', 'lime', '↑ 7.0%')}`;
   const quickActions = [];
   if (permissions[state.role].includes('pos')) quickActions.push('<button class="quick-action" data-nav="pos"><span class="quick-action-icon">▣</span><span>New sale</span></button>');
   if (['Admin', 'Pharmacist', 'Technician'].includes(state.role)) quickActions.push('<button class="quick-action" data-action="add-patient"><span class="quick-action-icon">♙</span><span>Add patient</span></button>');
   else if (permissions[state.role].includes('patients')) quickActions.push('<button class="quick-action" data-nav="patients"><span class="quick-action-icon">♙</span><span>Find patient</span></button>');
   if (permissions[state.role].includes('prescriptions')) quickActions.push('<button class="quick-action" data-nav="prescriptions"><span class="quick-action-icon">Rx</span><span>Review Rx</span></button>');
   if (permissions[state.role].includes('purchase-orders')) quickActions.push('<button class="quick-action" data-nav="purchase-orders"><span class="quick-action-icon">⇄</span><span>Restock queue</span></button>');
+  if (state.role === 'Cashier') quickActions.push('<button class="quick-action" data-nav="reports"><span class="quick-action-icon">▥</span><span>Shift reports</span></button>');
   const activityPanel = isTechnician
     ? `<div class="panel activity-panel"><div class="panel-heading"><div><h2>Stock needing a closer look</h2><p>Products at or below their reorder threshold</p></div><button class="text-link" data-nav="inventory">View inventory →</button></div><div class="table-wrap"><table><thead><tr><th>PRODUCT</th><th>ON HAND</th><th>REORDER AT</th><th>STATUS</th></tr></thead><tbody>${alerts.map((drug) => `<tr><td class="cell-primary">${escapeHtml(drug.name)}</td><td>${drug.onHand}</td><td>${drug.reorder}</td><td>${statusBadge('Low stock')}</td></tr>`).join('') || '<tr><td colspan="4"><div class="empty-state">No stock items need attention.</div></td></tr>'}</tbody></table></div></div>`
-    : `<div class="panel activity-panel"><div class="panel-heading"><div><h2>Recent transactions</h2><p>Today · Northside Pharmacy</p></div><button class="text-link" data-nav="pos">View all →</button></div><div class="table-wrap"><table><thead><tr><th>INVOICE</th><th>PATIENT</th><th>TIME</th><th>ITEMS</th><th>PAYMENT</th><th>TOTAL</th><th>STATUS</th></tr></thead><tbody>${recentSales.map((sale) => `<tr><td class="cell-primary">${escapeHtml(sale.id)}</td><td>${escapeHtml(sale.patient)}</td><td>${escapeHtml(sale.time)}</td><td>${sale.items} item${sale.items === 1 ? '' : 's'}</td><td>${escapeHtml(sale.payment)}</td><td class="cell-primary">${money(sale.total)}</td><td>${statusBadge(sale.status)}</td></tr>`).join('')}</tbody></table></div></div>`;
+    : `<div class="panel activity-panel"><div class="panel-heading"><div><h2>Recent transactions</h2><p>Today · Northside Pharmacy</p></div><button class="text-link" data-nav="${permissions[state.role].includes('pos') ? 'pos' : 'reports'}">${permissions[state.role].includes('pos') ? 'View all' : 'View reports'} →</button></div><div class="table-wrap"><table><thead><tr><th>INVOICE</th><th>PATIENT</th><th>TIME</th><th>ITEMS</th><th>PAYMENT</th><th>TOTAL</th><th>STATUS</th></tr></thead><tbody>${recentSales.map((sale) => `<tr><td class="cell-primary">${escapeHtml(sale.id)}</td><td>${escapeHtml(sale.patient)}</td><td>${escapeHtml(sale.time)}</td><td>${sale.items} item${sale.items === 1 ? '' : 's'}</td><td>${escapeHtml(sale.payment)}</td><td class="cell-primary">${money(sale.total)}</td><td>${statusBadge(sale.status)}</td></tr>`).join('')}</tbody></table></div></div>`;
   const chartPanel = isTechnician
     ? `<div class="panel sales-panel"><div class="panel-heading"><div><h2>Stock summary</h2><p>Available units across active product lines</p></div><button class="text-link" data-nav="inventory">Inventory →</button></div><div class="panel-body"><div class="report-grid" style="grid-template-columns:1fr 1fr;margin:0"><div class="report-stat"><span>Units on hand</span><strong>${data.drugs.reduce((sum, drug) => sum + drug.onHand, 0)}</strong><small>Across ${data.drugs.length} products</small></div><div class="report-stat"><span>Below reorder point</span><strong>${lowStock().length}</strong><small>${data.purchaseOrders.filter((order) => order.status !== 'Sent').length} open order(s)</small></div></div></div></div>`
-    : `<div class="panel sales-panel"><div class="panel-heading"><div><h2>${state.role === 'Cashier' ? 'Shift sales' : 'Sales overview'}</h2><p>Daily revenue and prescription sales</p></div><select class="range-select" aria-label="Sales chart date range"><option>This week</option><option>This month</option></select></div><div class="panel-body"><div class="sales-chart"><div class="axis-labels"><span>$1.5k</span><span>$1k</span><span>$500</span><span>$0</span></div><div class="chart-stage">${[['M',54],['T',68],['W',47],['T',78],['F',63],['S',88],['S',71],['M',42]].map(([day, height]) => `<div class="chart-column"><div class="bar-stack" style="--bar:${height}%"><i></i></div><span class="bar-label">${day}</span></div>`).join('')}</div></div><div class="chart-legend"><span><i class="legend-dot"></i>Prescription</span><span><i class="legend-dot alt"></i>OTC & other</span></div></div></div>`;
+    : `<div class="panel sales-panel"><div class="panel-heading"><div><h2>${state.role === 'Cashier' ? 'Shift sales' : 'Sales overview'}</h2><p>Daily revenue and prescription sales</p></div><select class="range-select" aria-label="Sales chart date range"><option>This week</option><option>This month</option></select></div><div class="panel-body"><div class="sales-chart"><div class="axis-labels"><span>${money(150000)}</span><span>${money(100000)}</span><span>${money(50000)}</span><span>${money(0)}</span></div><div class="chart-stage">${[['M',54],['T',68],['W',47],['T',78],['F',63],['S',88],['S',71],['M',42]].map(([day, height]) => `<div class="chart-column"><div class="bar-stack" style="--bar:${height}%"><i></i></div><span class="bar-label">${day}</span></div>`).join('')}</div></div><div class="chart-legend"><span><i class="legend-dot"></i>Prescription</span><span><i class="legend-dot alt"></i>OTC & other</span></div></div></div>`;
+  const attentionPanel = state.role === 'Cashier' ? '' : `<div class="panel attention-panel"><div class="attention-banner"><span class="attention-symbol">!</span><span><strong>Needs your attention</strong><small>${lowStock().length} items need a restock plan</small></span></div><div class="alert-list">${alerts.length ? alerts.map((drug) => `<div class="alert-row"><span class="drug-pill">${escapeHtml(initialsFor(drug.generic))}</span><span class="alert-copy"><strong>${escapeHtml(drug.name)}</strong><small>${escapeHtml(drug.id)} · reorder at ${drug.reorder}</small></span><span class="alert-qty">${drug.onHand} left</span></div>`).join('') : '<div class="empty-state">Stock levels look healthy.</div>'}<button class="text-link" data-nav="inventory">Review inventory →</button></div></div>`;
   return `<div class="metric-grid">${metrics}</div>
   <div class="overview-grid">
     ${chartPanel}
     <div class="right-stack">
-      <div class="panel attention-panel"><div class="attention-banner"><span class="attention-symbol">!</span><span><strong>Needs your attention</strong><small>${lowStock().length} items need a restock plan</small></span></div><div class="alert-list">${alerts.length ? alerts.map((drug) => `<div class="alert-row"><span class="drug-pill">${escapeHtml(initialsFor(drug.generic))}</span><span class="alert-copy"><strong>${escapeHtml(drug.name)}</strong><small>${escapeHtml(drug.id)} · reorder at ${drug.reorder}</small></span><span class="alert-qty">${drug.onHand} left</span></div>`).join('') : '<div class="empty-state">Stock levels look healthy.</div>'}<button class="text-link" data-nav="inventory">Review inventory →</button></div></div>
+      ${attentionPanel}
       <div class="panel"><div class="panel-heading"><h2>Quick actions</h2></div><div class="quick-actions">${quickActions.join('')}</div></div>
     </div>
     ${activityPanel}
@@ -249,16 +317,30 @@ function renderSuppliers() {
   return `<div class="toolbar"><div class="toolbar-left"><label class="search-field"><span>⌕</span><input id="supplier-search" type="search" placeholder="Search suppliers..." value="${escapeHtml(state.supplierQuery)}"></label></div><span style="color:#829087;font-size:9px">${data.suppliers.filter((supplier) => supplier.active).length} active partners</span></div><div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>SUPPLIER</th><th>CONTACT</th><th>EMAIL</th><th>PHONE</th><th>TERMS</th><th>STATUS</th><th></th></tr></thead><tbody>${suppliers.map((supplier) => `<tr data-search="${escapeHtml(`${supplier.name} ${supplier.contact} ${supplier.email}`.toLowerCase())}"><td><span class="cell-primary">${escapeHtml(supplier.name)}</span><small class="cell-sub">${escapeHtml(supplier.id)}</small></td><td>${escapeHtml(supplier.contact)}</td><td>${escapeHtml(supplier.email)}</td><td>${escapeHtml(supplier.phone)}</td><td>${escapeHtml(supplier.terms)}</td><td>${statusBadge(supplier.active ? 'Active' : 'Inactive')}</td><td>${state.role === 'Admin' && supplier.active ? `<button class="button button-small" data-action="edit-supplier" data-id="${escapeHtml(supplier.id)}">Edit</button> <button class="button button-small button-danger" data-action="deactivate-supplier" data-id="${escapeHtml(supplier.id)}">Deactivate</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="7"><div class="empty-state">No suppliers match that search.</div></td></tr>`}</tbody></table></div><div class="table-foot"><span>Supplier agency records</span><span>Only admin can manage supplier access.</span></div></div>`;
 }
 
+function renderEmployees() {
+  if (state.role !== 'Admin') return '<div class="empty-state">This section is only available to administrators.</div>';
+  const employees = data.employees.filter((employee) => employee.active);
+  return `<div class="panel table-panel"><div class="panel-heading"><div><h2>Employee accounts</h2><p>${employees.length} active accounts can sign in to this demo</p></div><span class="status">Admin access</span></div><div class="table-wrap"><table><thead><tr><th>EMPLOYEE</th><th>EMAIL</th><th>ROLE</th><th>ACCOUNT</th><th></th></tr></thead><tbody>${employees.map((employee) => `<tr><td><span class="patient-cell"><span class="avatar avatar-green">${escapeHtml(initialsFor(employee.name))}</span><span class="cell-primary">${escapeHtml(employee.name)}<small class="cell-sub">${escapeHtml(employee.id)}</small></span></span></td><td>${escapeHtml(employee.email)}</td><td>${escapeHtml(employee.role)}</td><td>${statusBadge('Active')}</td><td>${employee.id === state.employeeId ? '<span class="cell-sub">Current account</span>' : `<button class="button button-small button-danger" data-action="remove-employee" data-id="${escapeHtml(employee.id)}">Remove</button>`}</td></tr>`).join('')}</tbody></table></div><div class="table-foot"><span>Demo credentials are stored in this browser only.</span><span>Use sign out to switch accounts.</span></div></div>`;
+}
+
+function openEmployeeModal() {
+  const roleOptions = ['Admin', 'Pharmacist', 'Technician', 'Cashier'].map((role) => `<option value="${role}">${role}</option>`).join('');
+  openModal('Add employee', `${field('Full name', 'name')}${field('Email address', 'email', 'email')}${field('Temporary password', 'password', 'password')}${field('Role', 'role', 'select', '', true, roleOptions)}`, 'Add employee', 'create-employee');
+  $('#field-password').minLength = 6;
+}
+
 function renderReports() {
   if (state.role === 'Technician') {
     return `<div class="report-grid">${[['Products tracked', data.drugs.length, 'Active product lines'], ['Units on hand', data.drugs.reduce((sum, drug) => sum + drug.onHand, 0), 'Across all batches'], ['Below reorder point', lowStock().length, 'Needs a restock plan']].map(([label, value, foot]) => `<div class="report-stat"><span>${label}</span><strong>${value}</strong><small style="color:#4b835e">${foot}</small></div>`).join('')}</div><section class="panel"><div class="panel-heading"><div><h2>Stock watch</h2><p>Products at or below their reorder threshold</p></div><button class="text-link" data-nav="inventory">Open inventory →</button></div><div class="table-wrap"><table><thead><tr><th>PRODUCT</th><th>ON HAND</th><th>REORDER AT</th><th>BATCH</th><th>STATUS</th></tr></thead><tbody>${lowStock().map((drug) => `<tr><td class="cell-primary">${escapeHtml(drug.name)}</td><td>${drug.onHand}</td><td>${drug.reorder}</td><td>${escapeHtml(drug.batch)}</td><td>${statusBadge('Low stock')}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty-state">No products below their reorder point.</div></td></tr>'}</tbody></table></div></section>`;
   }
   if (state.role === 'Cashier') {
-    const shiftTotal = data.sales.reduce((sum, sale) => sum + sale.total, 0);
-    return `<div class="report-grid">${[['Shift sales', money(1284.5), 'Today · Northside'], ['Transactions', data.sales.length + 34, 'Processed this shift'], ['Basket average', money(24.18), 'Today']].map(([label, value, foot]) => `<div class="report-stat"><span>${label}</span><strong>${value}</strong><small>${foot}</small></div>`).join('')}</div><section class="panel activity-panel"><div class="panel-heading"><div><h2>Recent shift transactions</h2><p>Payment and invoice activity</p></div><button class="text-link" data-nav="pos">New sale →</button></div><div class="table-wrap"><table><thead><tr><th>INVOICE</th><th>PATIENT</th><th>TIME</th><th>ITEMS</th><th>PAYMENT</th><th>TOTAL</th><th>STATUS</th></tr></thead><tbody>${data.sales.map((sale) => `<tr><td class="cell-primary">${escapeHtml(sale.id)}</td><td>${escapeHtml(sale.patient)}</td><td>${escapeHtml(sale.time)}</td><td>${sale.items}</td><td>${escapeHtml(sale.payment)}</td><td class="cell-primary">${money(sale.total)}</td><td>${statusBadge(sale.status)}</td></tr>`).join('')}</tbody></table></div><div class="table-foot"><span>Shift total ${money(shiftTotal)} in sample transactions</span><span>Demo data</span></div></section>`;
+    const shiftSales = data.sales.filter((sale) => sale.employeeId === state.employeeId);
+    const shiftTotal = shiftSales.reduce((sum, sale) => sum + sale.total, 0);
+    const averageSale = shiftSales.length ? shiftTotal / shiftSales.length : 0;
+    return `<div class="report-grid">${[['Shift sales', money(shiftTotal), 'Today · Northside'], ['Transactions', shiftSales.length, 'Processed this shift'], ['Basket average', money(averageSale), 'Today']].map(([label, value, foot]) => `<div class="report-stat"><span>${label}</span><strong>${value}</strong><small>${foot}</small></div>`).join('')}</div><section class="panel activity-panel"><div class="panel-heading"><div><h2>Recent shift transactions</h2><p>Payment and invoice activity</p></div><button class="text-link" data-nav="pos">New sale →</button></div><div class="table-wrap"><table><thead><tr><th>INVOICE</th><th>CUSTOMER</th><th>TIME</th><th>ITEMS</th><th>PAYMENT</th><th>TOTAL</th><th>STATUS</th></tr></thead><tbody>${shiftSales.map((sale) => `<tr><td class="cell-primary">${escapeHtml(sale.id)}</td><td>${escapeHtml(sale.patient)}</td><td>${escapeHtml(sale.time)}</td><td>${sale.items}</td><td>${escapeHtml(sale.payment)}</td><td class="cell-primary">${money(sale.total)}</td><td>${statusBadge(sale.status)}</td></tr>`).join('') || '<tr><td colspan="7"><div class="empty-state">No transactions recorded for this account yet.</div></td></tr>'}</tbody></table></div><div class="table-foot"><span>Shift total ${money(shiftTotal)}</span><span>Demo data</span></div></section>`;
   }
   const total = data.sales.reduce((sum, sale) => sum + sale.total, 0);
-  return `<div class="report-grid">${[['Sales today', money(1284.5), '↑ 12.8% from last Saturday'], ['Transactions', String(data.sales.length + 34), '↑ 8.2% from last Saturday'], ['Inventory value', money(data.drugs.reduce((sum, drug) => sum + drug.onHand * drug.price, 0)), `${lowStock().length} products below threshold`]].map(([label, value, foot]) => `<div class="report-stat"><span>${label}</span><strong>${value}</strong><small>${foot}</small></div>`).join('')}</div><div class="overview-grid"><section class="panel"><div class="panel-heading"><div><h2>Weekly sales</h2><p>Gross revenue by day · current week</p></div><select class="range-select"><option>This week</option><option>Last week</option></select></div><div class="panel-body"><div class="bar-report">${[['Mon',48],['Tue',67],['Wed',54],['Thu',78],['Fri',62],['Sat',91],['Sun',36]].map(([day, height]) => `<div class="bar-report-item"><i style="height:${height}%"></i>${day}</div>`).join('')}</div></div></section><section class="panel"><div class="panel-heading"><div><h2>Sales mix</h2><p>By product category</p></div></div><div class="panel-body"><div class="split-line"><i style="width:44%"></i><i style="width:31%"></i><i style="width:25%"></i></div><div class="split-legend"><span><i class="legend-dot"></i>Prescription 44%</span><span><i class="legend-dot alt"></i>OTC 31%</span><span><i class="legend-dot" style="background:#d2a26e"></i>Other 25%</span></div><div style="margin-top:19px">${[['Prescription sales', money(total * .54)], ['OTC & wellness', money(total * .31)], ['Other', money(total * .15)]].map(([label, value]) => `<div class="summary-line"><span>${label}</span><strong>${value}</strong></div>`).join('')}</div></div></section><section class="panel activity-panel"><div class="panel-heading"><div><h2>Inventory watch</h2><p>Products at or below their reorder threshold</p></div><button class="text-link" data-nav="inventory">Open inventory →</button></div><div class="table-wrap"><table><thead><tr><th>PRODUCT</th><th>ON HAND</th><th>REORDER AT</th><th>SUPPLIER</th><th>STATUS</th></tr></thead><tbody>${lowStock().map((drug) => `<tr><td class="cell-primary">${escapeHtml(drug.name)}</td><td>${drug.onHand}</td><td>${drug.reorder}</td><td>${escapeHtml(drug.supplier)}</td><td>${statusBadge('Low stock')}</td></tr>`).join('') || `<tr><td colspan="5"><div class="empty-state">No low-stock products.</div></td></tr>`}</tbody></table></div></section></div>`;
+  return `<div class="report-grid">${[['Sales today', money(107898), '↑ 12.8% from last Saturday'], ['Transactions', String(data.sales.length + 34), '↑ 8.2% from last Saturday'], ['Inventory value', money(data.drugs.reduce((sum, drug) => sum + drug.onHand * drug.price, 0)), `${lowStock().length} products below threshold`]].map(([label, value, foot]) => `<div class="report-stat"><span>${label}</span><strong>${value}</strong><small>${foot}</small></div>`).join('')}</div><div class="overview-grid"><section class="panel"><div class="panel-heading"><div><h2>Weekly sales</h2><p>Gross revenue by day · current week</p></div><select class="range-select"><option>This week</option><option>Last week</option></select></div><div class="panel-body"><div class="bar-report">${[['Mon',48],['Tue',67],['Wed',54],['Thu',78],['Fri',62],['Sat',91],['Sun',36]].map(([day, height]) => `<div class="bar-report-item"><i style="height:${height}%"></i>${day}</div>`).join('')}</div></div></section><section class="panel"><div class="panel-heading"><div><h2>Sales mix</h2><p>By product category</p></div></div><div class="panel-body"><div class="split-line"><i style="width:44%"></i><i style="width:31%"></i><i style="width:25%"></i></div><div class="split-legend"><span><i class="legend-dot"></i>Prescription 44%</span><span><i class="legend-dot alt"></i>OTC 31%</span><span><i class="legend-dot" style="background:#d2a26e"></i>Other 25%</span></div><div style="margin-top:19px">${[['Prescription sales', money(total * .54)], ['OTC & wellness', money(total * .31)], ['Other', money(total * .15)]].map(([label, value]) => `<div class="summary-line"><span>${label}</span><strong>${value}</strong></div>`).join('')}</div></div></section><section class="panel activity-panel"><div class="panel-heading"><div><h2>Inventory watch</h2><p>Products at or below their reorder threshold</p></div><button class="text-link" data-nav="inventory">Open inventory →</button></div><div class="table-wrap"><table><thead><tr><th>PRODUCT</th><th>ON HAND</th><th>REORDER AT</th><th>SUPPLIER</th><th>STATUS</th></tr></thead><tbody>${lowStock().map((drug) => `<tr><td class="cell-primary">${escapeHtml(drug.name)}</td><td>${drug.onHand}</td><td>${drug.reorder}</td><td>${escapeHtml(drug.supplier)}</td><td>${statusBadge('Low stock')}</td></tr>`).join('') || `<tr><td colspan="5"><div class="empty-state">No low-stock products.</div></td></tr>`}</tbody></table></div></section></div>`;
 }
 
 function openModal(title, fields, submitLabel, action, id = '') {
@@ -292,9 +374,51 @@ function recordPoAudit(order, action, actor = state.role === 'Admin' ? 'Maya Che
   order.audit.push({ action, actor, at: new Date().toISOString() });
 }
 
+function signIn(employee) {
+  state.employeeId = employee.id;
+  state.role = employee.role;
+  state.view = 'overview';
+  $('#login-error').hidden = true;
+  $('#login-screen').hidden = true;
+  $('#app-shell').hidden = false;
+  render();
+}
+
+function renderLoginAccounts() {
+  const avatars = { Admin: 'avatar-green', Pharmacist: 'avatar-blue', Technician: 'avatar-orange', Cashier: 'avatar-lime' };
+  const accounts = data.employees.filter((employee) => employee.active);
+  $('#demo-account-list').innerHTML = accounts.map((employee) => `<button class="demo-account" type="button" data-demo-email="${escapeHtml(employee.email)}" data-demo-password="${escapeHtml(employee.password)}"><span class="avatar ${avatars[employee.role] || 'avatar-green'}">${escapeHtml(initialsFor(employee.name))}</span><span class="demo-account-copy"><strong>${escapeHtml(employee.name)}</strong><small>${escapeHtml(employee.role)} · ${escapeHtml(employee.email)}</small></span><span class="demo-account-use">Use account →</span></button>`).join('');
+}
+
+function signOut() {
+  state.employeeId = null;
+  state.view = 'overview';
+  state.role = 'Admin';
+  $('#app-shell').hidden = true;
+  $('#login-screen').hidden = false;
+  $('#login-form').reset();
+  $('#login-error').hidden = true;
+  renderLoginAccounts();
+  $('#login-email').focus();
+}
+
 function handleAction(action, id, element) {
   const role = state.role;
-  if (action === 'dismiss-modal') {
+  if (action === 'logout') {
+    signOut();
+  } else if (action === 'add-employee' && role === 'Admin') {
+    openEmployeeModal();
+  } else if (action === 'remove-employee' && role === 'Admin') {
+    const employee = data.employees.find((item) => item.id === id);
+    const activeAdmins = data.employees.filter((item) => item.active && item.role === 'Admin');
+    if (!employee) return;
+    if (employee.id === state.employeeId) return notify('Sign in with another Admin account before removing this account.');
+    if (employee.role === 'Admin' && activeAdmins.length < 2) return notify('Keep at least one active Admin account.');
+    if (confirm(`Remove ${employee.name}'s sign-in account?`)) {
+      data.employees = data.employees.filter((item) => item.id !== id);
+      save(); render(); notify('Employee account removed.');
+    }
+  } else if (action === 'dismiss-modal') {
     if (element.classList.contains('modal-backdrop') && element !== element.parentElement) return;
     $('#modal-root').innerHTML = '';
   } else if (action === 'receive-stock') {
@@ -345,7 +469,7 @@ function handleAction(action, id, element) {
   } else if (action === 'print-now') {
     window.print();
   } else if (action === 'add-cart') {
-    if (role !== 'Cashier') return notify('Only cashiers can process a sale.');
+    if (!['Admin', 'Cashier'].includes(role)) return notify('Your role cannot process a sale.');
     const drug = drugFor(id);
     if (!drug || drug.onHand < 1) return notify('This product is out of stock.');
     const line = data.cart.find((item) => item.drugId === id);
@@ -366,24 +490,24 @@ function handleAction(action, id, element) {
     data.cart = []; render();
   } else if (action === 'checkout') {
     if (!data.cart.length) return;
-    if (role !== 'Cashier') return notify('Only cashiers can process a sale.');
+    if (!['Admin', 'Cashier'].includes(role)) return notify('Your role cannot process a sale.');
     const invalid = data.cart.find((line) => !drugFor(line.drugId) || drugFor(line.drugId).onHand < line.quantity);
     if (invalid) return notify('Stock changed. Review the basket and try again.');
     const subtotal = data.cart.reduce((sum, line) => sum + drugFor(line.drugId).price * line.quantity, 0);
     const total = subtotal * 1.0825;
     data.cart.forEach((line) => { drugFor(line.drugId).onHand -= line.quantity; });
-    const sale = { id: `INV-${8292 + data.sales.length - 4}`, patient: $('#pos-patient')?.value || 'Walk-in customer', time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }), items: data.cart.reduce((sum, line) => sum + line.quantity, 0), total, payment: $('#pos-payment')?.value || 'Card', status: 'Paid' };
+    const sale = { id: `INV-${8292 + data.sales.length - 4}`, patient: $('#pos-patient')?.value || 'Walk-in customer', time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }), items: data.cart.reduce((sum, line) => sum + line.quantity, 0), total, payment: $('#pos-payment')?.value || 'Card', status: 'Paid', employeeId: state.employeeId };
     data.sales.unshift(sale); data.cart = []; save(); render(); notify(`Sale ${sale.id} complete. Inventory updated.`);
-  } else if (action === 'approve-rx' && role === 'Pharmacist') {
+  } else if (action === 'approve-rx' && ['Admin', 'Pharmacist'].includes(role)) {
     const rx = data.prescriptions.find((item) => item.id === id);
     if (!rx || rx.status !== 'Pending review') return;
     if (rx.allergy && !confirm(`${rx.allergy}. Confirm this prescription has been clinically checked and approve?`)) return;
     rx.status = 'Approved'; save(); render(); notify(`${rx.id} approved for dispensing.`);
-  } else if (action === 'reject-rx' && role === 'Pharmacist') {
+  } else if (action === 'reject-rx' && ['Admin', 'Pharmacist'].includes(role)) {
     const rx = data.prescriptions.find((item) => item.id === id);
     if (!rx || rx.status !== 'Pending review') return;
     rx.status = 'Rejected'; save(); render(); notify(`${rx.id} rejected.`);
-  } else if (action === 'dispense-rx' && role === 'Pharmacist') {
+  } else if (action === 'dispense-rx' && ['Admin', 'Pharmacist'].includes(role)) {
     const rx = data.prescriptions.find((item) => item.id === id);
     if (!rx || rx.status !== 'Approved') return;
     rx.status = 'Dispensed'; save(); render(); notify(`${rx.id} marked as dispensed.`);
@@ -398,7 +522,12 @@ function handleFormSubmit(form) {
   const values = Object.fromEntries(new FormData(form).entries());
   const action = form.dataset.submitAction;
   const id = form.dataset.recordId;
-  if (action === 'create-patient') {
+  if (action === 'create-employee' && state.role === 'Admin') {
+    if (data.employees.some((employee) => employee.email.toLowerCase() === values.email.toLowerCase())) return notify('An account already uses that email address.');
+    if (values.password.length < 6) return notify('Use a temporary password with at least 6 characters.');
+    data.employees.unshift({ id: `EMP-${Date.now()}`, name: values.name, email: values.email.toLowerCase(), password: values.password, role: values.role, active: true });
+    state.view = 'employees';
+  } else if (action === 'create-patient') {
     data.patients.unshift({ id: `PT-${2050 + data.patients.length}`, ...values, age: Number(values.age), lastVisit: 'No visits yet', initials: initialsFor(values.name) });
     state.view = 'patients';
   } else if (action === 'create-doctor') {
@@ -452,7 +581,7 @@ function handleFormSubmit(form) {
   save();
   $('#modal-root').innerHTML = '';
   render();
-  const messages = { 'create-patient': 'Patient added.', 'create-doctor': 'Doctor added.', 'create-supplier': 'Supplier added.', 'save-supplier': 'Supplier updated.', 'receive-stock-submit': 'Inventory updated.', 'receive-one-submit': 'Inventory updated.', 'create-po': 'Purchase order draft created.', 'add-po-item-submit': 'Product added to the draft.', 'send-po': 'Purchase order approved and marked sent.' };
+  const messages = { 'create-employee': 'Employee account created.', 'create-patient': 'Patient added.', 'create-doctor': 'Doctor added.', 'create-supplier': 'Supplier added.', 'save-supplier': 'Supplier updated.', 'receive-stock-submit': 'Inventory updated.', 'receive-one-submit': 'Inventory updated.', 'create-po': 'Purchase order draft created.', 'add-po-item-submit': 'Product added to the draft.', 'send-po': 'Purchase order approved and marked sent.' };
   notify(messages[action] || 'Changes saved.');
 }
 
@@ -469,6 +598,14 @@ function applyInventoryFilters() {
 }
 
 document.addEventListener('click', (event) => {
+  const demoAccount = event.target.closest('[data-demo-email]');
+  if (demoAccount) {
+    $('#login-email').value = demoAccount.dataset.demoEmail;
+    $('#login-password').value = demoAccount.dataset.demoPassword;
+    $('#login-password').focus();
+    $('#login-error').hidden = true;
+    return;
+  }
   const nav = event.target.closest('[data-view], [data-nav]');
   if (nav) {
     const view = nav.dataset.view || nav.dataset.nav;
@@ -488,7 +625,18 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('submit', (event) => {
-  if (event.target.id === 'modal-form') {
+  if (event.target.id === 'login-form') {
+    event.preventDefault();
+    const email = $('#login-email').value.trim().toLowerCase();
+    const password = $('#login-password').value;
+    const employee = data.employees.find((item) => item.active && item.email.toLowerCase() === email && item.password === password);
+    if (!employee) {
+      $('#login-error').textContent = 'That email and password do not match an active account.';
+      $('#login-error').hidden = false;
+      return;
+    }
+    signIn(employee);
+  } else if (event.target.id === 'modal-form') {
     event.preventDefault();
     handleFormSubmit(event.target);
   }
@@ -518,21 +666,17 @@ document.addEventListener('input', (event) => {
   } else if (input.id === 'global-search') {
     state.globalQuery = input.value.trim().toLowerCase();
     if (state.globalQuery.length < 2) return;
-    const patient = data.patients.find((item) => `${item.name} ${item.id}`.toLowerCase().includes(state.globalQuery));
+    const patient = permissions[state.role].includes('patients') ? data.patients.find((item) => `${item.name} ${item.id}`.toLowerCase().includes(state.globalQuery)) : null;
     const drug = data.drugs.find((item) => `${item.name} ${item.generic}`.toLowerCase().includes(state.globalQuery));
     if (patient) { state.view = 'patients'; state.patientQuery = patient.name; render(); $('#patient-search')?.focus(); }
-    else if (drug) { state.view = 'inventory'; state.inventoryQuery = drug.name; render(); $('#inventory-search')?.focus(); }
+    else if (drug && permissions[state.role].includes('inventory')) { state.view = 'inventory'; state.inventoryQuery = drug.name; render(); $('#inventory-search')?.focus(); }
+    else if (drug && permissions[state.role].includes('pos')) { state.view = 'pos'; render(); const search = $('#pos-search'); search.value = drug.name; search.dispatchEvent(new Event('input', { bubbles: true })); search.focus(); }
   }
 });
 
 document.addEventListener('change', (event) => {
   const target = event.target;
-  if (target.id === 'role-select') {
-    state.role = target.value;
-    state.view = permissions[state.role].includes(state.view) ? state.view : 'overview';
-    render();
-    notify(`Switched demo role to ${state.role}.`);
-  } else if (target.id === 'inventory-filter') {
+  if (target.id === 'inventory-filter') {
     applyInventoryFilters();
   } else if (target.id === 'prescription-filter') {
     state.prescriptionFilter = target.value; render();
@@ -542,8 +686,11 @@ document.addEventListener('change', (event) => {
 });
 
 $('#mobile-menu').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
-$('#notifications-button').addEventListener('click', () => notify(`${pendingCount()} prescriptions and ${lowStock().length} low-stock products need attention.`));
-$('#profile-button').addEventListener('click', () => notify('Use the role selector above to preview permissions.'));
+$('#notifications-button').addEventListener('click', () => {
+  if (['Admin', 'Pharmacist'].includes(state.role)) notify(`${pendingCount()} prescriptions and ${lowStock().length} low-stock products need attention.`);
+  else if (state.role === 'Technician') notify(`${lowStock().length} products are at or below their reorder point.`);
+  else notify('No new shift notifications.');
+});
 document.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault(); $('#global-search').focus();
@@ -551,4 +698,5 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') $('#modal-root').innerHTML = '';
 });
 
-render();
+renderLoginAccounts();
+$('#login-email').focus();

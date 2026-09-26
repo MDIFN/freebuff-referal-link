@@ -4,18 +4,45 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f5f7f4">
-    <title>Fieldnote Pharmacy | Operations</title>
+    <title>Ham-SaAh Rx | Pharmacy Operations</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="sidebar" id="sidebar">
-        <a class="brand" href="#overview" aria-label="Fieldnote Pharmacy home">
+    <main class="login-screen" id="login-screen">
+      <section class="login-intro">
+        <a class="brand login-brand" href="#login" aria-label="Ham-SaAh Rx">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-          <span class="brand-copy"><strong>fieldnote</strong><small>PHARMACY OS</small></span>
+          <span class="brand-copy"><strong>Ham-SaAh Rx</strong><small>PHARMACY OS</small></span>
+        </a>
+        <div class="login-intro-copy"><span class="eyebrow">NORTHSIDE PHARMACY</span><h1>Care moves forward, together.</h1><p>A calmer workspace for the people behind every prescription.</p></div>
+        <div class="login-stamp"><span>FN</span><small>TRUSTED CARE<br>EVERY DAY</small></div>
+      </section>
+      <section class="login-content">
+        <form class="login-form" id="login-form">
+          <span class="eyebrow">WELCOME BACK</span>
+          <h2>Sign in to Ham-SaAh Rx</h2>
+          <p class="login-hint">Northside Pharmacy staff access.</p>
+          <label class="form-field"><span>Email address</span><input id="login-email" name="email" type="email" autocomplete="username" placeholder="you@northside.com" required></label>
+          <label class="form-field"><span>Password</span><input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Enter password" required></label>
+          <p class="login-error" id="login-error" role="alert" hidden></p>
+          <button class="button button-primary login-submit" type="submit">Sign in <span aria-hidden="true">→</span></button>
+        </form>
+        <section class="demo-accounts" aria-labelledby="demo-account-heading">
+          <div class="demo-accounts-heading"><h3 id="demo-account-heading">Demo accounts</h3><span>LOCAL PREVIEW</span></div>
+          <div class="demo-account-list" id="demo-account-list"></div>
+          <p class="demo-disclaimer">Demo access only. Do not enter real patient data.</p>
+        </section>
+      </section>
+    </main>
+
+    <div class="app-shell" id="app-shell" hidden>
+      <aside class="sidebar" id="sidebar">
+        <a class="brand" href="#overview" aria-label="Ham-SaAh Rx home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="brand-copy"><strong>Ham-SaAh Rx</strong><small>PHARMACY OS</small></span>
         </a>
 
         <div class="branch-picker"><span class="branch-icon">N</span><span><strong>Northside</strong><small>Retail pharmacy</small></span><span class="chevron">⌄</span></div>
@@ -34,11 +61,14 @@
 
           <span class="nav-label secondary-label">INSIGHTS</span>
           <button class="nav-item" data-view="reports"><span class="nav-icon">▥</span>Reports</button>
+
+          <span class="nav-label secondary-label" data-section="management">MANAGEMENT</span>
+          <button class="nav-item" data-view="employees"><span class="nav-icon">♧</span>Employees</button>
         </nav>
 
         <div class="sidebar-bottom">
           <div class="support-note"><span class="support-dot"></span><span><strong>All systems normal</strong><small>Last synced just now</small></span></div>
-          <button class="profile-button" id="profile-button"><span class="avatar avatar-green">MC</span><span class="profile-copy"><strong>Maya Chen</strong><small id="profile-role">Administrator</small></span><span class="profile-menu">···</span></button>
+          <div class="profile-button"><span class="avatar avatar-green" id="profile-initials">MC</span><span class="profile-copy"><strong id="profile-name">Maya Chen</strong><small id="profile-role">Administrator</small></span></div>
         </div>
       </aside>
 
@@ -49,7 +79,8 @@
           <div class="topbar-actions">
             <label class="global-search"><span aria-hidden="true">⌕</span><input id="global-search" type="search" placeholder="Search anything..." autocomplete="off"><kbd>⌘ K</kbd></label>
             <span class="demo-badge">DEMO</span>
-            <label class="role-select-label" title="Switch demo role"><span class="sr-only">Demo role</span><select id="role-select"><option value="Admin">Admin</option><option value="Pharmacist">Pharmacist</option><option value="Technician">Technician</option><option value="Cashier">Cashier</option></select></label>
+            <span class="session-role" id="session-role">Admin</span>
+            <button class="button sign-out-button" id="logout-button" type="button" data-action="logout">Sign out</button>
             <button class="icon-button notification-button" id="notifications-button" aria-label="View notifications">♧<span class="notification-dot"></span></button>
           </div>
         </header>
