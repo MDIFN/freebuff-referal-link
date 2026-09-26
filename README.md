@@ -2,6 +2,20 @@
 
 A responsive, dependency-free pharmacy operations demo. Open `index.html` in a browser to sign in to the role-aware workspace. All displayed prices use INR.
 
+## Page previews
+
+| Sign in | Overview |
+| --- | --- |
+| ![Ham-SaAh Rx sign-in](screenshots/login.png) | ![Ham-SaAh Rx overview dashboard](screenshots/dashboard.png) |
+
+| Point of sale | Inventory |
+| --- | --- |
+| ![Point of sale](screenshots/pos.png) | ![Inventory](screenshots/inventory.png) |
+
+| Prescription review | Purchase orders |
+| --- | --- |
+| ![Prescription review](screenshots/prescriptions.png) | ![Purchase orders](screenshots/purchase-orders.png) |
+
 ## Demo workflows
 
 - Sign in as one of the four demo employees below to preview role-specific navigation and actions.
