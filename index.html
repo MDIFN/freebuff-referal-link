@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f7f4">
+    <title>Fieldnote Pharmacy | Operations</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <a class="brand" href="#overview" aria-label="Fieldnote Pharmacy home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="brand-copy"><strong>fieldnote</strong><small>PHARMACY OS</small></span>
+        </a>
+
+        <div class="branch-picker"><span class="branch-icon">N</span><span><strong>Northside</strong><small>Retail pharmacy</small></span><span class="chevron">⌄</span></div>
+        <nav class="primary-nav" aria-label="Main navigation">
+          <span class="nav-label">WORKSPACE</span>
+          <button class="nav-item active" data-view="overview"><span class="nav-icon">◫</span>Overview</button>
+          <button class="nav-item" data-view="pos"><span class="nav-icon">▣</span>Point of sale <span class="nav-key">⌘ 1</span></button>
+          <button class="nav-item" data-view="prescriptions"><span class="nav-icon">Rx</span>Prescriptions <span class="nav-count" id="prescription-count">2</span></button>
+          <button class="nav-item" data-view="inventory"><span class="nav-icon">▤</span>Inventory <span class="nav-count warning-count" id="stock-count">4</span></button>
+          <button class="nav-item" data-view="purchase-orders"><span class="nav-icon">⇄</span>Purchase orders</button>
+
+          <span class="nav-label secondary-label">DIRECTORY</span>
+          <button class="nav-item" data-view="patients"><span class="nav-icon">♙</span>Patients</button>
+          <button class="nav-item" data-view="doctors"><span class="nav-icon">✳</span>Doctors</button>
+          <button class="nav-item" data-view="suppliers"><span class="nav-icon">▱</span>Suppliers</button>
+
+          <span class="nav-label secondary-label">INSIGHTS</span>
+          <button class="nav-item" data-view="reports"><span class="nav-icon">▥</span>Reports</button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="support-note"><span class="support-dot"></span><span><strong>All systems normal</strong><small>Last synced just now</small></span></div>
+          <button class="profile-button" id="profile-button"><span class="avatar avatar-green">MC</span><span class="profile-copy"><strong>Maya Chen</strong><small id="profile-role">Administrator</small></span><span class="profile-menu">···</span></button>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <button class="mobile-menu" id="mobile-menu" aria-label="Open navigation">☰</button>
+          <div class="breadcrumb"><span>Northside Pharmacy</span><span class="crumb-separator">/</span><strong id="breadcrumb-current">Overview</strong></div>
+          <div class="topbar-actions">
+            <label class="global-search"><span aria-hidden="true">⌕</span><input id="global-search" type="search" placeholder="Search anything..." autocomplete="off"><kbd>⌘ K</kbd></label>
+            <span class="demo-badge">DEMO</span>
+            <label class="role-select-label" title="Switch demo role"><span class="sr-only">Demo role</span><select id="role-select"><option value="Admin">Admin</option><option value="Pharmacist">Pharmacist</option><option value="Technician">Technician</option><option value="Cashier">Cashier</option></select></label>
+            <button class="icon-button notification-button" id="notifications-button" aria-label="View notifications">♧<span class="notification-dot"></span></button>
+          </div>
+        </header>
+
+        <section class="page-wrap">
+          <div class="page-heading">
+            <div><p class="eyebrow" id="page-eyebrow">SATURDAY, SEPTEMBER 26, 2026</p><h1 id="page-title">Good morning, Maya</h1><p class="page-subtitle" id="page-subtitle">Here’s what’s happening at your pharmacy today.</p></div>
+            <div id="heading-actions" class="heading-actions"></div>
+          </div>
+          <div id="content" class="content-area"></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="modal-root"></div>
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
