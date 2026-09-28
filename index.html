@@ -17,14 +17,14 @@
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
           <span class="brand-copy"><strong>Ham-SaAh Rx</strong><small>PHARMACY OS</small></span>
         </a>
-        <div class="login-intro-copy"><span class="eyebrow">NORTHSIDE PHARMACY</span><h1>Care moves forward, together.</h1><p>A calmer workspace for the people behind every prescription.</p></div>
+        <div class="login-intro-copy"><span class="eyebrow" id="login-company-name">NORTHSIDE PHARMACY</span><h1>Care moves forward, together.</h1><p>A calmer workspace for the people behind every prescription.</p></div>
         <div class="login-stamp"><span>FN</span><small>TRUSTED CARE<br>EVERY DAY</small></div>
       </section>
       <section class="login-content">
         <form class="login-form" id="login-form">
           <span class="eyebrow">WELCOME BACK</span>
           <h2>Sign in to Ham-SaAh Rx</h2>
-          <p class="login-hint">Northside Pharmacy staff access.</p>
+          <p class="login-hint" id="login-hint">Northside Pharmacy staff access.</p>
           <label class="form-field"><span>Email address</span><input id="login-email" name="email" type="email" autocomplete="username" placeholder="you@northside.com" required></label>
           <label class="form-field"><span>Password</span><input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Enter password" required></label>
           <p class="login-error" id="login-error" role="alert" hidden></p>
@@ -45,7 +45,7 @@
           <span class="brand-copy"><strong>Ham-SaAh Rx</strong><small>PHARMACY OS</small></span>
         </a>
 
-        <div class="branch-picker"><span class="branch-icon">N</span><span><strong>Northside</strong><small>Retail pharmacy</small></span><span class="chevron">⌄</span></div>
+        <div class="branch-picker"><span class="branch-icon" id="company-icon">C</span><span><strong id="company-name">Company</strong><small>Company profile</small></span></div>
         <nav class="primary-nav" aria-label="Main navigation">
           <span class="nav-label">WORKSPACE</span>
           <button class="nav-item active" data-view="overview"><span class="nav-icon">◫</span>Overview</button>
@@ -64,6 +64,7 @@
 
           <span class="nav-label secondary-label" data-section="management">MANAGEMENT</span>
           <button class="nav-item" data-view="employees"><span class="nav-icon">♧</span>Employees</button>
+          <button class="nav-item" data-view="companies"><span class="nav-icon">▦</span>Companies</button>
         </nav>
 
         <div class="sidebar-bottom">
@@ -75,7 +76,7 @@
       <main class="main-area">
         <header class="topbar">
           <button class="mobile-menu" id="mobile-menu" aria-label="Open navigation">☰</button>
-          <div class="breadcrumb"><span>Northside Pharmacy</span><span class="crumb-separator">/</span><strong id="breadcrumb-current">Overview</strong></div>
+          <div class="breadcrumb"><span id="company-breadcrumb">Company</span><span class="crumb-separator">/</span><strong id="breadcrumb-current">Overview</strong></div>
           <div class="topbar-actions">
             <label class="global-search"><span aria-hidden="true">⌕</span><input id="global-search" type="search" placeholder="Search anything..." autocomplete="off"><kbd>⌘ K</kbd></label>
             <span class="demo-badge">DEMO</span>
@@ -84,6 +85,11 @@
             <button class="icon-button notification-button" id="notifications-button" aria-label="View notifications">♧<span class="notification-dot"></span></button>
           </div>
         </header>
+
+        <aside class="viewport-notice" id="viewport-notice" role="status" aria-live="polite" hidden>
+          <span><strong>Small-screen view detected.</strong> Some tables and detailed content may need horizontal scrolling. For the clearest full-workspace view, switch to a tablet or desktop display.</span>
+          <button class="icon-button" type="button" id="dismiss-viewport-notice" aria-label="Dismiss small-screen notice">×</button>
+        </aside>
 
         <section class="page-wrap">
           <div class="page-heading">
@@ -97,6 +103,7 @@
 
     <div id="modal-root"></div>
     <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <script src="drug-reference.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

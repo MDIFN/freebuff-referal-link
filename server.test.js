@@ -89,6 +89,11 @@ test('serves the static app and leaves unconfigured prices untouched', async (t)
   const base = `http://127.0.0.1:${server.address().port}`;
   const page = await fetch(`${base}/`).then((response) => response.text());
   assert.match(page, /Ham-SaAh Rx/);
+  const referenceResponse = await fetch(`${base}/drug-reference.js`);
+  const referenceScript = await referenceResponse.text();
+  assert.equal(referenceResponse.status, 200);
+  assert.match(referenceResponse.headers.get('content-type'), /javascript/);
+  assert.match(referenceScript, /window\.DRUG_REFERENCE/);
   const result = await fetch(`${base}/api/catalog/prices`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ products: [{ generic: 'Paracetamol' }] })

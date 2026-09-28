@@ -1,9 +1,15 @@
 const STORAGE_KEY = 'hamsaahrx-pharmacy-demo-v1';
 const LEGACY_STORAGE_KEY = 'fieldnote-pharmacy-demo-v1';
 const INR_PER_LEGACY_UNIT = 84;
+const DRUG_REFERENCE = window.DRUG_REFERENCE || [];
 
 const initialData = {
   currency: 'legacy',
+  superadmins: [
+    { id: 'SA-001', name: 'System Superadmin', email: 'superadmin@hamsaahrx.demo', password: 'super123', role: 'Superadmin', active: true }
+  ],
+  companyProfiles: [],
+  activeCompanyId: '',
   employees: [
     { id: 'EMP-001', name: 'Maya Chen', email: 'maya@hamsaahrx.demo', password: 'maya123', role: 'Admin', active: true },
     { id: 'EMP-002', name: 'Asha Patel', email: 'asha@hamsaahrx.demo', password: 'asha123', role: 'Pharmacist', active: true },
@@ -24,13 +30,13 @@ const initialData = {
   ],
   drugs: [
     { id: 'RX-001', name: 'Amoxicillin 500mg', generic: 'Amoxicillin', category: 'Antibiotic', onHand: 12, reorder: 24, batch: 'AMX-2408A', expiry: 'Oct 14, 2026', price: 12.5, supplier: 'MedSource Co.' },
-    { id: 'RX-002', name: 'Atorvastatin 20mg', generic: 'Atorvastatin', category: 'Cardiovascular', onHand: 86, reorder: 30, batch: 'ATV-2501C', expiry: 'Jan 20, 2027', price: 18, supplier: 'MedSource Co.' },
+    { id: 'RX-002', name: 'Atorvastatin 20mg', generic: 'Atorvastatin', category: 'Cardiovascular', onHand: 86, reorder: 30, batch: 'ATV-2501C', expiry: 'Jan 20, 2027', price: 18, supplier: 'MedSource Co.', strength: '20 mg', specification: 'Film-coated tablet; each tablet contains atorvastatin calcium equivalent to atorvastatin 10 mg, 20 mg, or 40 mg.', indication: 'Adjunct to diet to reduce elevated total cholesterol and triglycerides in primary hypercholesterolemia and mixed dyslipidemia.', referenceSource: 'CDSCO approval master' },
     { id: 'RX-003', name: 'Metformin 850mg', generic: 'Metformin', category: 'Diabetes care', onHand: 9, reorder: 25, batch: 'MET-2411B', expiry: 'Nov 08, 2026', price: 9.75, supplier: 'WellCare Distribution' },
     { id: 'RX-004', name: 'Cetirizine 10mg', generic: 'Cetirizine', category: 'Allergy', onHand: 142, reorder: 35, batch: 'CTZ-2503D', expiry: 'Mar 11, 2027', price: 7.25, supplier: 'Northwest Pharma' },
-    { id: 'RX-005', name: 'Lisinopril 10mg', generic: 'Lisinopril', category: 'Cardiovascular', onHand: 7, reorder: 20, batch: 'LIS-2412A', expiry: 'Dec 17, 2026', price: 11, supplier: 'MedSource Co.' },
+    { id: 'RX-005', name: 'Lisinopril 10mg', generic: 'Lisinopril', category: 'Cardiovascular', onHand: 7, reorder: 20, batch: 'LIS-2412A', expiry: 'Dec 17, 2026', price: 11, supplier: 'MedSource Co.', strength: '10 mg', specification: 'Tablet; contains lisinopril dihydrate equivalent to lisinopril 10 mg or 20 mg.', indication: 'Essential hypertension and congestive heart failure.', referenceSource: 'CDSCO approval master' },
     { id: 'RX-006', name: 'Omeprazole 20mg', generic: 'Omeprazole', category: 'Gastrointestinal', onHand: 64, reorder: 24, batch: 'OMP-2502B', expiry: 'Feb 18, 2027', price: 10.5, supplier: 'WellCare Distribution' },
     { id: 'RX-007', name: 'Vitamin D3 1000 IU', generic: 'Cholecalciferol', category: 'Supplement', onHand: 18, reorder: 28, batch: 'VTD-2504F', expiry: 'Apr 30, 2027', price: 8.25, supplier: 'Northwest Pharma' },
-    { id: 'RX-008', name: 'Ibuprofen 200mg', generic: 'Ibuprofen', category: 'Pain relief', onHand: 210, reorder: 40, batch: 'IBU-2505E', expiry: 'May 12, 2027', price: 6.5, supplier: 'WellCare Distribution' },
+    { id: 'RX-008', name: 'Ibuprofen 200mg', generic: 'Ibuprofen', category: 'Pain relief', onHand: 210, reorder: 40, batch: 'IBU-2505E', expiry: 'May 12, 2027', price: 6.5, supplier: 'WellCare Distribution', strength: '200 mg', specification: 'Tablet; each tablet contains ibuprofen 200 mg.', indication: 'Anti-rheumatic.', referenceSource: 'CDSCO approval master and PMBI tender list' },
     { id: 'RX-009', name: 'Albuterol inhaler', generic: 'Albuterol', category: 'Respiratory', onHand: 23, reorder: 12, batch: 'ALB-2501A', expiry: 'Jan 05, 2027', price: 26, supplier: 'MedSource Co.' }
   ],
   prescriptions: [
@@ -57,26 +63,70 @@ const initialData = {
   cart: []
 };
 
+const COMPANY_DATA_KEYS = ['currency', 'employees', 'patients', 'doctors', 'drugs', 'prescriptions', 'suppliers', 'purchaseOrders', 'sales', 'cart'];
+
+function snapshotCompanyData(source) {
+  return Object.fromEntries(COMPANY_DATA_KEYS.map((key) => [key, structuredClone(source[key] ?? (key === 'currency' ? 'INR' : []))]));
+}
+
+function createEmptyCompanyData(admin) {
+  return {
+    currency: 'INR',
+    employees: admin ? [{ ...admin, role: 'Admin', active: true }] : [],
+    patients: [], doctors: [], drugs: [], prescriptions: [], suppliers: [], purchaseOrders: [], sales: [], cart: []
+  };
+}
+
+function ensureCompanyProfiles(record) {
+  record.superadmins ||= structuredClone(initialData.superadmins);
+  record.companyProfiles ||= [];
+  if (!record.companyProfiles.length) {
+    const profile = { id: 'company-northside', name: 'Northside Pharmacy', companyData: snapshotCompanyData(record) };
+    record.companyProfiles.push(profile);
+    record.activeCompanyId = profile.id;
+  }
+  record.companyProfiles.forEach((company) => {
+    company.companyData ||= createEmptyCompanyData(null);
+  });
+  let active = record.companyProfiles.find((company) => company.id === record.activeCompanyId);
+  if (!active) {
+    active = record.companyProfiles[0];
+    record.activeCompanyId = active.id;
+  }
+  if (active.companyData) Object.assign(record, structuredClone(active.companyData));
+  active.companyData = snapshotCompanyData(record);
+  return record;
+}
+
 function loadData() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY));
-    if (stored && stored.drugs && stored.patients && stored.purchaseOrders) {
+    if (stored && stored.drugs && stored.patients && stored.purchaseOrders && stored.employees) {
       const restored = { ...structuredClone(initialData), ...stored };
+      initialData.drugs.forEach((referenceDrug) => {
+        const storedDrug = restored.drugs.find((drug) => drug.id === referenceDrug.id);
+        if (!storedDrug) return;
+        ['strength', 'specification', 'indication', 'referenceSource'].forEach((key) => {
+          if (referenceDrug[key] && !storedDrug[key]) storedDrug[key] = referenceDrug[key];
+        });
+      });
       migrateCurrency(restored);
       migrateAccountEmails(restored);
-      return restored;
+      return ensureCompanyProfiles(restored);
     }
   } catch { /* A malformed demo save should not block the app. */ }
   const fresh = structuredClone(initialData);
   migrateCurrency(fresh);
   migrateAccountEmails(fresh);
-  return fresh;
+  return ensureCompanyProfiles(fresh);
 }
 
 const data = loadData();
 const state = { view: 'overview', role: 'Admin', employeeId: null, inventoryQuery: '', patientQuery: '', doctorQuery: '', supplierQuery: '', prescriptionFilter: 'All prescriptions', poFilter: 'All orders', globalQuery: '', posDiscountPercent: 0, posDiscountFlat: 0 };
+let viewportNoticeDismissed = false;
 const permissions = {
   Admin: ['overview', 'pos', 'prescriptions', 'inventory', 'purchase-orders', 'patients', 'doctors', 'suppliers', 'reports', 'employees'],
+  Superadmin: ['overview', 'pos', 'prescriptions', 'inventory', 'purchase-orders', 'patients', 'doctors', 'suppliers', 'reports', 'employees', 'companies'],
   Pharmacist: ['overview', 'pos', 'prescriptions', 'inventory', 'purchase-orders', 'patients', 'doctors', 'reports'],
   Technician: ['overview', 'prescriptions', 'inventory', 'purchase-orders', 'patients', 'doctors', 'reports'],
   Cashier: ['overview', 'pos', 'inventory', 'reports']
@@ -91,19 +141,52 @@ const headings = {
   doctors: ['Doctors', 'Referring clinicians and their pharmacy activity.'],
   suppliers: ['Suppliers', 'Manage your approved distribution partners.'],
   reports: ['Reports & analytics', 'A useful read on sales and inventory performance.'],
-  employees: ['Employee access', 'Manage the people who can sign in to Ham-SaAh Rx.']
+  employees: ['Employee access', 'Manage the people who can sign in to Ham-SaAh Rx.'],
+  companies: ['Company profiles', 'Separate workspaces for each pharmacy company.']
 };
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(value) || 0);
 const save = () => {
+  const active = data.companyProfiles.find((company) => company.id === data.activeCompanyId);
+  if (active) active.companyData = snapshotCompanyData(data);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   localStorage.removeItem(LEGACY_STORAGE_KEY);
 };
+const activeCompany = () => data.companyProfiles.find((company) => company.id === data.activeCompanyId);
+const activeCompanyName = () => activeCompany()?.name || 'Company';
+const isAdminRole = () => ['Admin', 'Superadmin'].includes(state.role);
+const canPerformRole = (...roles) => state.role === 'Superadmin' || roles.includes(state.role);
+function switchCompanyProfile(companyId) {
+  const current = activeCompany();
+  const next = data.companyProfiles.find((company) => company.id === companyId && company.companyData);
+  if (state.employeeId && state.role !== 'Superadmin') return;
+  if (!next || !current) return;
+  current.companyData = snapshotCompanyData(data);
+  data.activeCompanyId = next.id;
+  Object.assign(data, structuredClone(next.companyData));
+  state.view = 'overview';
+  state.inventoryQuery = '';
+  state.patientQuery = '';
+  state.doctorQuery = '';
+  state.supplierQuery = '';
+  save();
+  render();
+  notify(`Switched to ${next.name}.`);
+}
 const pendingCount = () => data.prescriptions.filter((item) => item.status === 'Pending review').length;
 const lowStock = () => data.drugs.filter((drug) => drug.onHand <= drug.reorder);
 const initialsFor = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join('');
+function nextRecordId(records, prefix) {
+  const width = prefix === 'PT' ? 4 : 3;
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+  const highestId = records.reduce((highest, record) => {
+    const numericId = Number(pattern.exec(record.id)?.[1]) || 0;
+    return Math.max(highest, numericId);
+  }, 0);
+  return `${prefix}-${String(highestId + 1).padStart(width, '0')}`;
+}
 const drugFor = (id) => data.drugs.find((drug) => drug.id === id);
 const doctorFor = (id) => data.doctors.find((doctor) => doctor.id === id);
 const doctorReferralLink = (doctor) => `https://freebuff.app/r/${encodeURIComponent((doctor?.id || 'doctor').toLowerCase())}`;
@@ -254,6 +337,7 @@ function statusClass(status) {
   if (/rejected/i.test(status)) return 'rejected';
   if (/sent/i.test(status)) return 'sent';
   if (/low stock/i.test(status)) return 'low';
+  if (/no stock/i.test(status)) return 'no-stock';
   return '';
 }
 
@@ -264,19 +348,20 @@ function statusBadge(status) {
 function setHeading() {
   const [title, subtitle] = headings[state.view] || headings.overview;
   const isOverview = state.view === 'overview';
-  const employee = data.employees.find((item) => item.id === state.employeeId);
+  const employee = data.employees.find((item) => item.id === state.employeeId) || data.superadmins.find((item) => item.id === state.employeeId);
   $('#page-title').textContent = isOverview ? `Good morning, ${employee?.name.split(' ')[0] || state.role}` : title;
   $('#page-subtitle').textContent = isOverview ? subtitle : state.role === 'Technician' && state.view === 'purchase-orders' ? 'Add stock needs to the queue for admin review.' : subtitle;
   $('#breadcrumb-current').textContent = isOverview ? 'Overview' : title;
   $('#page-eyebrow').textContent = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date()).toUpperCase();
   const headingActions = $('#heading-actions');
-  if (state.view === 'pos' && ['Admin', 'Cashier', 'Pharmacist'].includes(state.role)) headingActions.innerHTML = `<button class="button" data-action="clear-cart">Clear basket</button>`;
-  else if (state.view === 'inventory' && ['Admin', 'Technician', 'Pharmacist'].includes(state.role)) headingActions.innerHTML = `<button class="button button-primary" data-action="receive-stock">＋ Receive stock</button><button class="button" data-action="sync-indian-catalog" style="margin-left:8px">Sync INR catalog</button>`;
-  else if (state.view === 'patients' && ['Admin', 'Pharmacist', 'Technician'].includes(state.role)) headingActions.innerHTML = `<button class="button button-primary" data-action="add-patient">＋ Add patient</button>`;
-  else if (state.view === 'doctors' && ['Admin', 'Pharmacist'].includes(state.role)) headingActions.innerHTML = `<button class="button button-primary" data-action="add-doctor">＋ Add doctor</button>`;
-  else if (state.view === 'suppliers' && state.role === 'Admin') headingActions.innerHTML = `<button class="button button-primary" data-action="add-supplier">＋ Add supplier</button>`;
-  else if (state.view === 'purchase-orders' && ['Admin', 'Pharmacist', 'Technician'].includes(state.role)) headingActions.innerHTML = `<button class="button button-primary" data-action="new-po">＋ New purchase order</button>`;
-  else if (state.view === 'employees' && state.role === 'Admin') headingActions.innerHTML = `<button class="button button-primary" data-action="add-employee">＋ Add employee</button>`;
+  if (state.view === 'companies' && state.role === 'Superadmin') headingActions.innerHTML = '<button class="button button-primary" data-action="add-company">＋ Add company</button>';
+  else if (state.view === 'pos' && canPerformRole('Admin', 'Cashier', 'Pharmacist')) headingActions.innerHTML = `<button class="button" data-action="clear-cart">Clear basket</button>`;
+  else if (state.view === 'inventory' && canPerformRole('Admin', 'Technician', 'Pharmacist')) headingActions.innerHTML = `${canPerformRole('Admin', 'Pharmacist') ? '<button class="button" data-action="browse-reference">Drug reference</button>' : ''}<button class="button button-primary" data-action="receive-stock">＋ Receive stock</button><button class="button" data-action="sync-indian-catalog" style="margin-left:8px">Sync INR catalog</button>`;
+  else if (state.view === 'patients' && canPerformRole('Admin', 'Pharmacist', 'Technician')) headingActions.innerHTML = `<button class="button button-primary" data-action="add-patient">＋ Add patient</button>`;
+  else if (state.view === 'doctors' && canPerformRole('Admin', 'Pharmacist')) headingActions.innerHTML = `<button class="button button-primary" data-action="add-doctor">＋ Add doctor</button>`;
+  else if (state.view === 'suppliers' && canPerformRole('Admin')) headingActions.innerHTML = `<button class="button button-primary" data-action="add-supplier">＋ Add supplier</button>`;
+  else if (state.view === 'purchase-orders' && canPerformRole('Admin', 'Pharmacist', 'Technician')) headingActions.innerHTML = `<button class="button button-primary" data-action="new-po">＋ New purchase order</button>`;
+  else if (state.view === 'employees' && canPerformRole('Admin')) headingActions.innerHTML = `<button class="button button-primary" data-action="add-employee">＋ Add employee</button>`;
   else headingActions.innerHTML = '';
 }
 
@@ -300,7 +385,10 @@ function updateNavigation() {
   $('#prescription-count').hidden = pendingCount() === 0;
   $('#stock-count').textContent = lowStock().length;
   $('#stock-count').hidden = lowStock().length === 0;
-  const employee = data.employees.find((item) => item.id === state.employeeId);
+  const employee = data.employees.find((item) => item.id === state.employeeId) || data.superadmins.find((item) => item.id === state.employeeId);
+  $('#company-name').textContent = activeCompanyName();
+  $('#company-breadcrumb').textContent = activeCompanyName();
+  $('#company-icon').textContent = initialsFor(activeCompanyName())[0] || 'C';
   $('#profile-name').textContent = employee?.name || 'Signed out';
   $('#profile-role').textContent = employee?.role || '';
   $('#profile-initials').textContent = initialsFor(employee?.name || '');
@@ -320,7 +408,8 @@ function render() {
     doctors: renderDoctors,
     suppliers: renderSuppliers,
     reports: renderReports,
-    employees: renderEmployees
+    employees: renderEmployees,
+    companies: renderCompanies
   };
   $('#content').innerHTML = (views[state.view] || renderOverview)();
   if (state.view === 'inventory') {
@@ -345,23 +434,24 @@ function render() {
       $('label[for="pos-patient"]', $('#content')).textContent = 'Customer name (optional)';
     }
   }
-  if (state.view === 'prescriptions' && !['Admin', 'Pharmacist'].includes(state.role)) {
-    $$('[data-action="approve-rx"], [data-action="reject-rx"], [data-action="dispense-rx"]', $('#content')).forEach((button) => button.remove());
-  }
-  if (state.view === 'purchase-orders' && state.role === 'Admin') {
+  if (state.view === 'purchase-orders' && canPerformRole('Admin')) {
     $$('.po-card', $('#content')).forEach((card) => {
-      const sourceButton = card.querySelector('.po-card-actions [data-id]');
+      const orderId = card.querySelector('.po-number')?.textContent.match(/PO-\d+/)?.[0];
       const actions = card.querySelector('.po-card-actions');
-      if (!sourceButton || !actions) return;
-      const auditButton = document.createElement('button');
-      auditButton.className = 'button button-small';
-      auditButton.dataset.action = 'view-audit';
-      auditButton.dataset.id = sourceButton.dataset.id;
-      auditButton.textContent = 'Audit trail';
-      actions.append(auditButton);
+      if (orderId && actions && !actions.querySelector('[data-action="view-audit"]')) {
+        actions.insertAdjacentHTML('beforeend', `<button class="button button-small" data-action="view-audit" data-id="${escapeHtml(orderId)}">Audit trail</button>`);
+      }
     });
   }
   $('#sidebar').classList.remove('open');
+  updateViewportNotice();
+}
+
+function updateViewportNotice() {
+  const notice = $('#viewport-notice');
+  if (!notice || viewportNoticeDismissed || $('#app-shell').hidden) return;
+  const narrow = window.innerWidth < 800 || (window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 1024);
+  notice.hidden = !narrow;
 }
 
 function metric(label, value, foot, icon, color, trend = '') {
@@ -372,27 +462,34 @@ function renderOverview() {
   const alerts = lowStock().slice(0, 3);
   const visibleSales = state.role === 'Cashier' ? data.sales.filter((sale) => sale.employeeId === state.employeeId) : data.sales;
   const recentSales = visibleSales.slice(0, 4);
+  const salesTotal = visibleSales.reduce((sum, sale) => sum + sale.total, 0);
+  const averageSale = visibleSales.length ? salesTotal / visibleSales.length : 0;
+  const prescriptionTotal = data.prescriptions.length;
   const isTechnician = state.role === 'Technician';
   const metrics = isTechnician
     ? `${metric('Products tracked', String(data.drugs.length), 'across active batches', 'Rx', 'green')}${metric('Items to reorder', String(lowStock().length).padStart(2, '0'), 'below reorder threshold', '!', 'orange')}${metric('Open purchase orders', String(data.purchaseOrders.filter((order) => order.status !== 'Sent').length), 'draft or awaiting approval', '⇄', 'blue')}${metric('Units on hand', String(data.drugs.reduce((sum, drug) => sum + drug.onHand, 0)), 'across the dispensary', '▤', 'lime')}`
     : state.role === 'Cashier'
-      ? `${metric('Shift sales', money(107898), 'today · Northside', '↗', 'green', '↑ 12.8%')}${metric('Transactions', '38', 'this shift', '▣', 'blue', '↑ 4')}${metric('Avg. basket', money(2031.12), 'vs. last week', '◷', 'lime', '↑ 7.0%')}${metric('Returns', '0', 'awaiting review', '↶', 'orange')}`
-      : `${metric('Today’s sales', money(107898), 'vs. previous Saturday', '↗', 'green', '↑ 12.8%')}${metric('Prescriptions', '38', '6 awaiting pickup', 'Rx', 'blue', '↑ 4')}${metric('Items to reorder', String(lowStock().length).padStart(2, '0'), 'below reorder threshold', '!', 'orange', '')}${metric('Avg. basket', money(2031.12), 'vs. last week', '◷', 'lime', '↑ 7.0%')}`;
+      ? `${metric('Shift sales', money(salesTotal), 'current company shift', '↗', 'green')}${metric('Transactions', String(visibleSales.length), 'this shift', '▣', 'blue')}${metric('Avg. basket', money(averageSale), 'current shift', '◷', 'lime')}${metric('Products in stock', String(data.drugs.filter((drug) => drug.onHand > 0).length), 'available to sell', 'Rx', 'orange')}`
+      : `${metric('Sales recorded', money(salesTotal), activeCompanyName(), '↗', 'green')}${metric('Prescriptions', String(prescriptionTotal), 'in this company', 'Rx', 'blue')}${metric('Items to reorder', String(lowStock().length).padStart(2, '0'), 'below reorder threshold', '!', 'orange', '')}${metric('Avg. basket', money(averageSale), 'recorded sales', '◷', 'lime')}`;
   const quickActions = [];
   if (permissions[state.role].includes('pos')) quickActions.push('<button class="quick-action" data-nav="pos"><span class="quick-action-icon">▣</span><span>New sale</span></button>');
-  if (['Admin', 'Pharmacist', 'Technician'].includes(state.role)) quickActions.push('<button class="quick-action" data-action="add-patient"><span class="quick-action-icon">♙</span><span>Add patient</span></button>');
+  if (canPerformRole('Admin', 'Pharmacist', 'Technician')) quickActions.push('<button class="quick-action" data-action="add-patient"><span class="quick-action-icon">♙</span><span>Add patient</span></button>');
   else if (permissions[state.role].includes('patients')) quickActions.push('<button class="quick-action" data-nav="patients"><span class="quick-action-icon">♙</span><span>Find patient</span></button>');
   if (permissions[state.role].includes('prescriptions')) quickActions.push('<button class="quick-action" data-nav="prescriptions"><span class="quick-action-icon">Rx</span><span>Review Rx</span></button>');
   if (permissions[state.role].includes('purchase-orders')) quickActions.push('<button class="quick-action" data-nav="purchase-orders"><span class="quick-action-icon">⇄</span><span>Restock queue</span></button>');
   if (state.role === 'Cashier') quickActions.push('<button class="quick-action" data-nav="reports"><span class="quick-action-icon">▥</span><span>Shift reports</span></button>');
   const activityPanel = isTechnician
     ? `<div class="panel activity-panel"><div class="panel-heading"><div><h2>Stock needing a closer look</h2><p>Products at or below their reorder threshold</p></div><button class="text-link" data-nav="inventory">View inventory →</button></div><div class="table-wrap"><table><thead><tr><th>PRODUCT</th><th>ON HAND</th><th>REORDER AT</th><th>STATUS</th></tr></thead><tbody>${alerts.map((drug) => `<tr><td class="cell-primary">${escapeHtml(drug.name)}</td><td>${drug.onHand}</td><td>${drug.reorder}</td><td>${statusBadge('Low stock')}</td></tr>`).join('') || '<tr><td colspan="4"><div class="empty-state">No stock items need attention.</div></td></tr>'}</tbody></table></div></div>`
-    : `<div class="panel activity-panel"><div class="panel-heading"><div><h2>Recent transactions</h2><p>Today · Northside Pharmacy</p></div><button class="text-link" data-nav="${permissions[state.role].includes('pos') ? 'pos' : 'reports'}">${permissions[state.role].includes('pos') ? 'View all' : 'View reports'} →</button></div><div class="table-wrap"><table><thead><tr><th>INVOICE</th><th>PATIENT</th><th>TIME</th><th>ITEMS</th><th>PAYMENT</th><th>TOTAL</th><th>STATUS</th></tr></thead><tbody>${recentSales.map((sale) => `<tr><td class="cell-primary">${escapeHtml(sale.id)}</td><td>${escapeHtml(sale.patient)}</td><td>${escapeHtml(sale.time)}</td><td>${sale.items} item${sale.items === 1 ? '' : 's'}</td><td>${escapeHtml(sale.payment)}</td><td class="cell-primary">${money(sale.total)}</td><td>${statusBadge(sale.status)}</td></tr>`).join('')}</tbody></table></div></div>`;
+    : `<div class="panel activity-panel"><div class="panel-heading"><div><h2>Recent transactions</h2><p>Today · ${escapeHtml(activeCompanyName())}</p></div><button class="text-link" data-nav="${permissions[state.role].includes('pos') ? 'pos' : 'reports'}">${permissions[state.role].includes('pos') ? 'View all' : 'View reports'} →</button></div><div class="table-wrap"><table><thead><tr><th>INVOICE</th><th>PATIENT</th><th>TIME</th><th>ITEMS</th><th>PAYMENT</th><th>TOTAL</th><th>STATUS</th></tr></thead><tbody>${recentSales.map((sale) => `<tr><td class="cell-primary">${escapeHtml(sale.id)}</td><td>${escapeHtml(sale.patient)}</td><td>${escapeHtml(sale.time)}</td><td>${sale.items} item${sale.items === 1 ? '' : 's'}</td><td>${escapeHtml(sale.payment)}</td><td class="cell-primary">${money(sale.total)}</td><td>${statusBadge(sale.status)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  const brandedMetrics = metrics.replace('today · Northside', `today · ${escapeHtml(activeCompanyName())}`);
+  const brandedActivityPanel = activityPanel.replace('Today · Northside Pharmacy', `Today · ${escapeHtml(activeCompanyName())}`);
   const chartPanel = isTechnician
     ? `<div class="panel sales-panel"><div class="panel-heading"><div><h2>Stock summary</h2><p>Available units across active product lines</p></div><button class="text-link" data-nav="inventory">Inventory →</button></div><div class="panel-body"><div class="report-grid" style="grid-template-columns:1fr 1fr;margin:0"><div class="report-stat"><span>Units on hand</span><strong>${data.drugs.reduce((sum, drug) => sum + drug.onHand, 0)}</strong><small>Across ${data.drugs.length} products</small></div><div class="report-stat"><span>Below reorder point</span><strong>${lowStock().length}</strong><small>${data.purchaseOrders.filter((order) => order.status !== 'Sent').length} open order(s)</small></div></div></div></div>`
-    : `<div class="panel sales-panel"><div class="panel-heading"><div><h2>${state.role === 'Cashier' ? 'Shift sales' : 'Sales overview'}</h2><p>Daily revenue and prescription sales</p></div><select class="range-select" aria-label="Sales chart date range"><option>This week</option><option>This month</option></select></div><div class="panel-body"><div class="sales-chart"><div class="axis-labels"><span>${money(150000)}</span><span>${money(100000)}</span><span>${money(50000)}</span><span>${money(0)}</span></div><div class="chart-stage">${[['M',54],['T',68],['W',47],['T',78],['F',63],['S',88],['S',71],['M',42]].map(([day, height]) => `<div class="chart-column"><div class="bar-stack" style="--bar:${height}%"><i></i></div><span class="bar-label">${day}</span></div>`).join('')}</div></div><div class="chart-legend"><span><i class="legend-dot"></i>Prescription</span><span><i class="legend-dot alt"></i>OTC & other</span></div></div></div>`;
+    : data.sales.length === 0
+      ? `<div class="panel sales-panel"><div class="panel-heading"><div><h2>Sales overview</h2><p>${escapeHtml(activeCompanyName())}</p></div></div><div class="empty-state"><strong>No sales recorded yet</strong>Sales and inventory activity will appear here as this company uses the workspace.</div></div>`
+      : `<div class="panel sales-panel"><div class="panel-heading"><div><h2>${state.role === 'Cashier' ? 'Shift sales' : 'Sales overview'}</h2><p>Daily revenue and prescription sales · ${escapeHtml(activeCompanyName())}</p></div></div><div class="panel-body"><div class="sales-chart"><div class="axis-labels"><span>${money(150000)}</span><span>${money(100000)}</span><span>${money(50000)}</span><span>${money(0)}</span></div><div class="chart-stage">${[['M',54],['T',68],['W',47],['T',78],['F',63],['S',88],['S',71],['M',42]].map(([day, height]) => `<div class="chart-column"><div class="bar-stack" style="--bar:${height}%"><i></i></div><span class="bar-label">${day}</span></div>`).join('')}</div></div><div class="chart-legend"><span><i class="legend-dot"></i>Prescription</span><span><i class="legend-dot alt"></i>OTC & other</span></div></div></div>`;
   const attentionPanel = state.role === 'Cashier' ? '' : `<div class="panel attention-panel"><div class="attention-banner"><span class="attention-symbol">!</span><span><strong>Needs your attention</strong><small>${lowStock().length} items need a restock plan</small></span></div><div class="alert-list">${alerts.length ? alerts.map((drug) => `<div class="alert-row"><span class="drug-pill">${escapeHtml(initialsFor(drug.generic))}</span><span class="alert-copy"><strong>${escapeHtml(drug.name)}</strong><small>${escapeHtml(drug.id)} · reorder at ${drug.reorder}</small></span><span class="alert-qty">${drug.onHand} left</span></div>`).join('') : '<div class="empty-state">Stock levels look healthy.</div>'}<button class="text-link" data-nav="inventory">Review inventory →</button></div></div>`;
-  return `<div class="metric-grid">${metrics}</div>
+  return `<div class="metric-grid">${brandedMetrics}</div>
   <div class="overview-grid">
     ${chartPanel}
     <div class="right-stack">
@@ -411,41 +508,109 @@ function renderPos() {
 }
 
 function renderInventory() {
-  const rows = data.drugs.filter((drug) => `${drug.name} ${drug.generic} ${drug.category} ${drug.batch}`.toLowerCase().includes(state.inventoryQuery.toLowerCase()));
-  return `<div class="toolbar"><div class="toolbar-left"><label class="search-field"><span>⌕</span><input id="inventory-search" type="search" placeholder="Search inventory..." value="${escapeHtml(state.inventoryQuery)}"></label><select id="inventory-filter" class="filter-select"><option>All stock</option><option>Low stock</option><option>In stock</option></select></div><div class="toolbar-right"><span style="color:#829087;font-size:9px">${data.drugs.length} products · ${lowStock().length} low stock</span></div></div>
-  <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>MEDICATION</th><th>CATEGORY</th><th>ON HAND</th><th>REORDER AT</th><th>BATCH / EXPIRY</th><th>UNIT PRICE</th><th>STATUS</th><th></th></tr></thead><tbody id="inventory-rows">${rows.map((drug) => `<tr data-search="${escapeHtml(`${drug.name} ${drug.generic} ${drug.category} ${drug.batch}`.toLowerCase())}" data-stock="${drug.onHand <= drug.reorder ? 'low' : 'in'}"><td><span class="inventory-name"><span class="medicine-mark ${drug.category === 'Pain relief' ? 'capsule' : ''}">Rx</span><span class="cell-primary">${escapeHtml(drug.name)}<small class="cell-sub">${escapeHtml(drug.generic)} · ${escapeHtml(drug.id)}</small></span></span></td><td>${escapeHtml(drug.category)}</td><td><span class="stock-track"><i class="${drug.onHand <= drug.reorder ? 'low-bar' : ''}" style="width:${Math.min(100, Math.round(drug.onHand / Math.max(drug.reorder * 2, 1) * 100))}%"></i></span><span class="cell-primary">${drug.onHand}</span></td><td>${drug.reorder} units</td><td>${escapeHtml(drug.batch)}<small class="cell-sub">Expires ${escapeHtml(drug.expiry)}</small></td><td>${money(drug.price)}</td><td>${statusBadge(drug.onHand <= drug.reorder ? 'Low stock' : 'In stock')}</td><td>${['Admin', 'Technician', 'Pharmacist'].includes(state.role) ? `<button class="button button-small" data-action="receive-one" data-id="${escapeHtml(drug.id)}">＋ Receive</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="8"><div class="empty-state">No products match that search.</div></td></tr>`}</tbody></table></div><div class="table-foot"><span>Showing ${rows.length} of ${data.drugs.length} products</span><span>Stock updated just now</span></div></div>`;
+  const rows = data.drugs.filter((drug) => `${drug.name} ${drug.generic} ${drug.category} ${drug.batch} ${drug.strength || ''} ${drug.specification || ''} ${drug.indication || ''}`.toLowerCase().includes(state.inventoryQuery.toLowerCase()));
+  return `<div class="toolbar"><div class="toolbar-left"><label class="search-field"><span>⌕</span><input id="inventory-search" type="search" placeholder="Search inventory..." value="${escapeHtml(state.inventoryQuery)}"></label><select id="inventory-filter" class="filter-select"><option>All stock</option><option>Low stock</option><option>In stock</option><option>No stock</option></select></div><div class="toolbar-right"><span style="color:#829087;font-size:9px">${data.drugs.length} products · ${lowStock().length} low stock</span></div></div>
+  <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>MEDICATION</th><th>CATEGORY</th><th>ON HAND</th><th>REORDER AT</th><th>BATCH / EXPIRY</th><th>UNIT PRICE</th><th>STATUS</th><th></th></tr></thead><tbody id="inventory-rows">${rows.map((drug) => {
+    const isLowStock = drug.onHand <= drug.reorder;
+    const hasDetails = Boolean(drug.specification || drug.indication);
+    const hasStock = drug.onHand > 0;
+    return `<tr data-search="${escapeHtml(`${drug.name} ${drug.generic} ${drug.category} ${drug.batch} ${drug.strength || ''} ${drug.specification || ''} ${drug.indication || ''}`.toLowerCase())}" data-stock="${hasStock ? isLowStock ? 'low' : 'in' : 'none'}"><td><span class="inventory-name"><span class="medicine-mark ${drug.category === 'Pain relief' ? 'capsule' : ''}">Rx</span><span class="cell-primary">${escapeHtml(drug.name)}<small class="cell-sub">${escapeHtml(drug.generic)} · ${escapeHtml(drug.id)}</small></span></span></td><td>${escapeHtml(drug.category)}</td><td><span class="stock-track"><i class="${isLowStock ? 'low-bar' : ''}" style="width:${Math.min(100, Math.round(drug.onHand / Math.max(drug.reorder * 2, 1) * 100))}%"></i></span><span class="cell-primary">${drug.onHand}</span></td><td>${drug.reorder} units</td><td>${escapeHtml(drug.batch || 'Not received')}<small class="cell-sub">${drug.expiry ? `Expires ${escapeHtml(drug.expiry)}` : 'Expiry pending receipt'}</small></td><td>${money(drug.price)}</td><td>${statusBadge(!hasStock ? 'No stock' : isLowStock ? 'Low stock' : 'In stock')}</td><td><span class="table-actions">${hasDetails ? `<button class="button button-small" data-action="drug-details" data-id="${escapeHtml(drug.id)}">Details</button>` : ''}${isLowStock && ['Admin', 'Pharmacist', 'Technician', 'Superadmin'].includes(state.role) ? `<button class="button button-small button-primary" data-action="order-low-stock" data-id="${escapeHtml(drug.id)}">Add to order</button>` : ''}${['Admin', 'Technician', 'Pharmacist', 'Superadmin'].includes(state.role) ? `<button class="button button-small" data-action="receive-one" data-id="${escapeHtml(drug.id)}">＋ Receive</button>` : ''}</span></td></tr>`;
+  }).join('') || `<tr><td colspan="8"><div class="empty-state">No products match that search.</div></td></tr>`}</tbody></table></div><div class="table-foot"><span>Showing ${rows.length} of ${data.drugs.length} products</span><span>Stock updated just now</span></div></div>`;
 }
 
 function renderPrescriptions() {
-  const filtered = data.prescriptions.filter((prescription) => state.prescriptionFilter === 'All prescriptions' || prescription.status === state.prescriptionFilter);
-  return `<div class="toolbar"><div class="toolbar-left"><select id="prescription-filter" class="filter-select">${['All prescriptions', 'Pending review', 'Approved', 'Dispensed', 'Rejected'].map((item) => `<option ${state.prescriptionFilter === item ? 'selected' : ''}>${item}</option>`).join('')}</select><span style="color:#829087;font-size:9px">${pendingCount()} need review</span></div><div class="toolbar-right"><span style="color:#829087;font-size:9px">${data.prescriptions.length} prescriptions</span></div></div><div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>RX NUMBER</th><th>PATIENT</th><th>PRESCRIBER</th><th>MEDICATION & DIRECTIONS</th><th>RECEIVED</th><th>STATUS</th><th>REVIEW</th></tr></thead><tbody>${filtered.map((rx) => `<tr><td class="cell-primary">${escapeHtml(rx.id)}</td><td><span class="cell-primary">${escapeHtml(rx.patient)}</span><small class="cell-sub">${escapeHtml(rx.patientId)}</small></td><td>${escapeHtml(rx.doctor)}</td><td><span class="cell-primary">${escapeHtml(rx.medication)}</span><small class="cell-sub">${escapeHtml(rx.directions)}</small>${rx.allergy ? `<small class="cell-sub" style="color:#b75a51">⚠ ${escapeHtml(rx.allergy)}</small>` : ''}</td><td>${escapeHtml(rx.received)}</td><td>${statusBadge(rx.status)}</td><td>${['Admin', 'Pharmacist'].includes(state.role) && rx.status === 'Pending review' ? `<span class="table-actions"><button class="button button-small" data-action="approve-rx" data-id="${escapeHtml(rx.id)}">Approve</button><button class="button button-small button-danger" data-action="reject-rx" data-id="${escapeHtml(rx.id)}">Reject</button></span>` : rx.status === 'Approved' && ['Admin', 'Pharmacist'].includes(state.role) ? `<button class="button button-small button-primary" data-action="dispense-rx" data-id="${escapeHtml(rx.id)}">Mark dispensed</button>` : '—'}</td></tr>`).join('') || `<tr><td colspan="7"><div class="empty-state">No prescriptions in this view.</div></td></tr>`}</tbody></table></div><div class="table-foot"><span>Showing ${filtered.length} prescriptions</span><span>Clinical review actions are recorded locally in this demo.</span></div></div>`;
+  const filtered = data.prescriptions.filter((prescription) =>
+    state.prescriptionFilter === 'All prescriptions' || prescription.status === state.prescriptionFilter
+  );
+  const canReview = canPerformRole('Admin', 'Pharmacist');
+  const rows = filtered.map((prescription) => {
+    const reviewActions = canReview && prescription.status === 'Pending review'
+      ? `<span class="table-actions"><button class="button button-small" data-action="approve-rx" data-id="${escapeHtml(prescription.id)}">Approve</button><button class="button button-small button-danger" data-action="reject-rx" data-id="${escapeHtml(prescription.id)}">Reject</button></span>`
+      : canReview && prescription.status === 'Approved'
+        ? `<button class="button button-small button-primary" data-action="dispense-rx" data-id="${escapeHtml(prescription.id)}">Mark dispensed</button>`
+        : '—';
+    return `<tr><td class="cell-primary">${escapeHtml(prescription.id)}</td><td><span class="cell-primary">${escapeHtml(prescription.patient)}</span><small class="cell-sub">${escapeHtml(prescription.patientId)}</small></td><td>${escapeHtml(prescription.doctor)}</td><td><span class="cell-primary">${escapeHtml(prescription.medication)}</span><small class="cell-sub">${escapeHtml(prescription.directions)}</small>${prescription.allergy ? `<small class="cell-sub" style="color:#b75a51">⚠ ${escapeHtml(prescription.allergy)}</small>` : ''}</td><td>${escapeHtml(prescription.received)}</td><td>${statusBadge(prescription.status)}</td><td>${reviewActions}</td></tr>`;
+  }).join('');
+  const filters = ['All prescriptions', 'Pending review', 'Approved', 'Dispensed', 'Rejected'];
+  return `<div class="toolbar"><div class="toolbar-left"><select id="prescription-filter" class="filter-select">${filters.map((filter) => `<option ${state.prescriptionFilter === filter ? 'selected' : ''}>${filter}</option>`).join('')}</select><span style="color:#829087;font-size:9px">${pendingCount()} need review</span></div><div class="toolbar-right"><span style="color:#829087;font-size:9px">${data.prescriptions.length} prescriptions</span></div></div><div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>RX NUMBER</th><th>PATIENT</th><th>PRESCRIBER</th><th>MEDICATION & DIRECTIONS</th><th>RECEIVED</th><th>STATUS</th><th>REVIEW</th></tr></thead><tbody>${rows || '<tr><td colspan="7"><div class="empty-state">No prescriptions in this view.</div></td></tr>'}</tbody></table></div><div class="table-foot"><span>${filtered.length} prescriptions · ${pendingCount()} awaiting review</span><span>Clinical review actions are recorded locally in this demo.</span></div></div>`;
 }
 
 function renderPurchaseOrders() {
-  const filtered = data.purchaseOrders.filter((order) => state.poFilter === 'All orders' || order.status === state.poFilter);
-  const draftItems = data.purchaseOrders.filter((order) => order.status === 'Draft').reduce((sum, order) => sum + order.items.length, 0);
-  return `<div class="toolbar"><div class="toolbar-left"><select id="po-filter" class="filter-select">${['All orders', 'Draft', 'Pending approval', 'Sent'].map((item) => `<option ${state.poFilter === item ? 'selected' : ''}>${item}</option>`).join('')}</select><span style="color:#829087;font-size:9px">${draftItems} line items in drafts</span></div><div class="toolbar-right"><span style="color:#829087;font-size:9px">${data.purchaseOrders.length} orders</span></div></div><div class="po-layout"><div class="panel"><div class="panel-heading"><div><h2>Order queue</h2><p>Requests from your pharmacy team</p></div></div>${filtered.length ? filtered.map((order) => `<article class="po-card"><div class="po-card-top"><div><span class="po-number">${escapeHtml(order.id)} · CREATED ${escapeHtml(order.created.toUpperCase())}</span><h3>${escapeHtml(order.supplier || 'Supplier not assigned')}</h3><p>Created by ${escapeHtml(order.createdBy || 'Pharmacy team')}</p></div>${statusBadge(order.status)}</div><div class="po-meta"><span><strong>${order.items.length}</strong> line item${order.items.length === 1 ? '' : 's'}</span><span>Est. <strong>${money(order.items.reduce((sum, item) => sum + item.cost * item.quantity, 0))}</strong></span></div><div class="po-card-actions">${['Admin', 'Pharmacist', 'Technician'].includes(state.role) && order.status === 'Draft' ? `<button class="button button-small" data-action="add-po-item" data-id="${escapeHtml(order.id)}">＋ Add item</button>` : ''}${state.role === 'Admin' && (order.status === 'Draft' || order.status === 'Pending approval') ? `<button class="button button-small button-primary" data-action="finalize-po" data-id="${escapeHtml(order.id)}">${order.status === 'Draft' ? 'Review & send' : 'Approve & send'}</button>` : ''}${state.role === 'Admin' && order.status === 'Sent' ? `<button class="button button-small" data-action="email-po" data-id="${escapeHtml(order.id)}">Email supplier</button><button class="button button-small" data-action="print-po" data-id="${escapeHtml(order.id)}">Print / PDF</button>` : ''}</div></article>`).join('') : `<div class="empty-state"><strong>No orders here yet</strong>Restock requests will appear here.</div>`}</div><aside class="panel"><div class="panel-heading"><div><h2>Restock snapshot</h2><p>Based on current shelf levels</p></div></div><div class="panel-body"><div class="summary-line"><span>Below threshold</span><strong>${lowStock().length} products</strong></div><div class="summary-line"><span>Draft / awaiting review</span><strong>${data.purchaseOrders.filter((order) => ['Draft', 'Pending approval'].includes(order.status)).length} orders</strong></div><div class="summary-line"><span>Sent to supplier</span><strong>${data.purchaseOrders.filter((order) => order.status === 'Sent').length} orders</strong></div><div style="margin-top:12px"><button class="button" data-nav="inventory" style="width:100%">Check low stock</button></div></div></aside></div>`;
+  const filtered = data.purchaseOrders.filter((order) =>
+    state.poFilter === 'All orders' || order.status === state.poFilter
+  );
+  const draftItems = data.purchaseOrders
+    .filter((order) => order.status === 'Draft')
+    .reduce((sum, order) => sum + order.items.length, 0);
+  const canCreateOrders = canPerformRole('Admin', 'Pharmacist', 'Technician');
+  const canManageOrders = canPerformRole('Admin');
+  const cards = filtered.map((order) => {
+    const actions = [
+      canCreateOrders && order.status === 'Draft'
+        ? `<button class="button button-small" data-action="add-po-item" data-id="${escapeHtml(order.id)}">＋ Add item</button>`
+        : '',
+      canManageOrders && ['Draft', 'Pending approval'].includes(order.status)
+        ? `<button class="button button-small button-primary" data-action="finalize-po" data-id="${escapeHtml(order.id)}">${order.status === 'Draft' ? 'Review & send' : 'Approve & send'}</button>`
+        : '',
+      canManageOrders && order.status === 'Sent'
+        ? `<button class="button button-small" data-action="email-po" data-id="${escapeHtml(order.id)}">Email supplier</button><button class="button button-small" data-action="print-po" data-id="${escapeHtml(order.id)}">Print / PDF</button>`
+        : '',
+      canManageOrders
+        ? `<button class="button button-small" data-action="view-audit" data-id="${escapeHtml(order.id)}">Audit trail</button>`
+        : ''
+    ].join('');
+    const total = order.items.reduce((sum, item) => sum + item.cost * item.quantity, 0);
+    return `<article class="po-card"><div class="po-card-top"><div><span class="po-number">${escapeHtml(order.id)} · CREATED ${escapeHtml(order.created.toUpperCase())}</span><h3>${escapeHtml(order.supplier || 'Supplier not assigned')}</h3><p>Created by ${escapeHtml(order.createdBy || 'Pharmacy team')}</p></div>${statusBadge(order.status)}</div><div class="po-meta"><span><strong>${order.items.length}</strong> line item${order.items.length === 1 ? '' : 's'}</span><span>Est. <strong>${money(total)}</strong></span></div><div class="po-card-actions">${actions}</div></article>`;
+  }).join('');
+  const filters = ['All orders', 'Draft', 'Pending approval', 'Sent'];
+  const openOrders = data.purchaseOrders.filter((order) => ['Draft', 'Pending approval'].includes(order.status)).length;
+  const sentOrders = data.purchaseOrders.filter((order) => order.status === 'Sent').length;
+  return `<div class="toolbar"><div class="toolbar-left"><select id="po-filter" class="filter-select">${filters.map((filter) => `<option ${state.poFilter === filter ? 'selected' : ''}>${filter}</option>`).join('')}</select><span style="color:#829087;font-size:9px">${draftItems} line items in drafts</span></div><div class="toolbar-right"><span style="color:#829087;font-size:9px">${data.purchaseOrders.length} orders</span></div></div><div class="po-layout"><div class="panel"><div class="panel-heading"><div><h2>Order queue</h2><p>Requests from your pharmacy team</p></div></div>${cards || '<div class="empty-state"><strong>No orders here yet</strong>Restock requests will appear here.</div>'}</div><aside class="panel"><div class="panel-heading"><div><h2>Restock snapshot</h2><p>Based on current shelf levels</p></div></div><div class="panel-body"><div class="summary-line"><span>Below threshold</span><strong>${lowStock().length} products</strong></div><div class="summary-line"><span>Draft / awaiting review</span><strong>${openOrders} orders</strong></div><div class="summary-line"><span>Sent to supplier</span><strong>${sentOrders} orders</strong></div><div style="margin-top:12px"><button class="button" data-nav="inventory" style="width:100%">Check low stock</button></div></div></aside></div>`;
 }
 
 function renderPatients() {
   const patients = data.patients.filter((patient) => `${patient.name} ${patient.id} ${patient.phone}`.toLowerCase().includes(state.patientQuery.toLowerCase()));
-  return `<div class="toolbar"><div class="toolbar-left"><label class="search-field"><span>⌕</span><input id="patient-search" type="search" placeholder="Search patients..." value="${escapeHtml(state.patientQuery)}"></label></div><span style="color:#829087;font-size:9px">${data.patients.length} patients</span></div><div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>PATIENT</th><th>AGE</th><th>PHONE</th><th>ALLERGIES</th><th>LAST VISIT</th><th>RECORD</th></tr></thead><tbody>${patients.map((patient, index) => `<tr data-search="${escapeHtml(`${patient.name} ${patient.id} ${patient.phone}`.toLowerCase())}"><td><span class="patient-cell"><span class="avatar ${index % 3 === 1 ? 'avatar-blue' : index % 3 === 2 ? 'avatar-orange' : 'avatar-green'}">${escapeHtml(patient.initials || initialsFor(patient.name))}</span><span class="cell-primary">${escapeHtml(patient.name)}<small class="cell-sub">${escapeHtml(patient.id)}</small></span></span></td><td>${patient.age}</td><td>${escapeHtml(patient.phone)}</td><td>${escapeHtml(patient.allergies)}</td><td>${escapeHtml(patient.lastVisit)}</td><td><button class="text-link" data-action="patient-history" data-id="${escapeHtml(patient.id)}">View history</button></td></tr>`).join('') || `<tr><td colspan="6"><div class="empty-state">No patients match that search.</div></td></tr>`}</tbody></table></div><div class="table-foot"><span>Showing ${patients.length} of ${data.patients.length} patients</span><span>Patient records are demo data.</span></div></div>`;
+  const rows = patients.map((patient, index) => `<tr data-search="${escapeHtml(`${patient.name} ${patient.id} ${patient.phone}`.toLowerCase())}"><td><span class="patient-cell"><span class="avatar ${index % 3 === 1 ? 'avatar-blue' : index % 3 === 2 ? 'avatar-orange' : 'avatar-green'}">${escapeHtml(patient.initials || initialsFor(patient.name))}</span><span class="cell-primary">${escapeHtml(patient.name)}</span></span></td><td class="cell-primary">${escapeHtml(patient.id)}</td><td>${escapeHtml(patient.age)}</td><td>${escapeHtml(patient.phone)}</td><td>${escapeHtml(patient.allergies)}</td><td>${escapeHtml(patient.lastVisit)}</td><td><button class="text-link" data-action="patient-history" data-id="${escapeHtml(patient.id)}">View history</button></td><td>${canPerformRole('Admin') ? `<button class="button button-small" data-action="edit-patient" data-id="${escapeHtml(patient.id)}">Edit</button>` : ''}</td></tr>`).join('');
+  return `<div class="toolbar"><div class="toolbar-left"><label class="search-field"><span>⌕</span><input id="patient-search" type="search" placeholder="Search patients..." value="${escapeHtml(state.patientQuery)}"></label></div><span style="color:#829087;font-size:9px">${data.patients.length} patients</span></div><div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>PATIENT</th><th>PATIENT ID</th><th>AGE</th><th>PHONE</th><th>ALLERGIES</th><th>LAST VISIT</th><th>RECORD</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="8"><div class="empty-state">No patients match that search.</div></td></tr>'}</tbody></table></div><div class="table-foot"><span>Showing ${patients.length} of ${data.patients.length} patients</span><span>Patient records are demo data.</span></div></div>`;
 }
 
 function renderDoctors() {
   const doctors = data.doctors.filter((doctor) => `${doctor.name} ${doctor.specialty} ${doctor.email}`.toLowerCase().includes(state.doctorQuery.toLowerCase()));
-  return `<div class="toolbar"><div class="toolbar-left"><label class="search-field"><span>⌕</span><input id="doctor-search" type="search" placeholder="Search doctors..." value="${escapeHtml(state.doctorQuery)}"></label></div><span style="color:#829087;font-size:9px">${data.doctors.length} clinicians</span></div><div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>CLINICIAN</th><th>SPECIALTY</th><th>PHONE</th><th>EMAIL</th><th>REFERRALS</th><th>STATUS</th><th>REFERRAL LINK</th></tr></thead><tbody>${doctors.map((doctor, index) => `<tr data-search="${escapeHtml(`${doctor.name} ${doctor.specialty} ${doctor.email}`.toLowerCase())}"><td><span class="patient-cell"><span class="avatar ${index % 2 ? 'avatar-blue' : 'avatar-green'}">${escapeHtml(initialsFor(doctor.name.replace(/^Dr\.\s*/, '')))}</span><span class="cell-primary">${escapeHtml(doctor.name)}<small class="cell-sub">${escapeHtml(doctor.id)}</small></span></span></td><td>${escapeHtml(doctor.specialty)}</td><td>${escapeHtml(doctor.phone)}</td><td>${escapeHtml(doctor.email)}</td><td>${doctor.referrals} this month</td><td>${statusBadge('Active')}</td><td><button class="button button-small" data-action="copy-referral-link" data-id="${escapeHtml(doctor.id)}">Copy link</button></td></tr>`).join('') || `<tr><td colspan="7"><div class="empty-state">No doctors match that search.</div></td></tr>`}</tbody></table></div><div class="table-foot"><span>Showing ${doctors.length} of ${data.doctors.length} clinicians</span><span>Provider directory · Northside</span></div></div>`;
+  const rows = doctors.map((doctor, index) => `<tr data-search="${escapeHtml(`${doctor.name} ${doctor.specialty} ${doctor.email}`.toLowerCase())}"><td><span class="patient-cell"><span class="avatar ${index % 2 ? 'avatar-blue' : 'avatar-green'}">${escapeHtml(initialsFor(doctor.name.replace(/^Dr\.\s*/, '')))}</span><span class="cell-primary">${escapeHtml(doctor.name)}<small class="cell-sub">${escapeHtml(doctor.id)}</small></span></span></td><td>${escapeHtml(doctor.specialty)}</td><td>${escapeHtml(doctor.phone)}</td><td>${escapeHtml(doctor.email)}</td><td>${doctor.referrals} this month</td><td>${statusBadge('Active')}</td><td><button class="button button-small" data-action="copy-referral-link" data-id="${escapeHtml(doctor.id)}">Copy link</button></td><td>${canPerformRole('Admin') ? `<button class="button button-small" data-action="edit-doctor" data-id="${escapeHtml(doctor.id)}">Edit</button>` : ''}</td></tr>`).join('');
+  return `<div class="toolbar"><div class="toolbar-left"><label class="search-field"><span>⌕</span><input id="doctor-search" type="search" placeholder="Search doctors..." value="${escapeHtml(state.doctorQuery)}"></label></div><span style="color:#829087;font-size:9px">${data.doctors.length} clinicians</span></div><div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>CLINICIAN</th><th>SPECIALTY</th><th>PHONE</th><th>EMAIL</th><th>REFERRALS</th><th>STATUS</th><th>REFERRAL LINK</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="8"><div class="empty-state">No doctors match that search.</div></td></tr>'}</tbody></table></div><div class="table-foot"><span>Showing ${doctors.length} of ${data.doctors.length} clinicians</span><span>Provider directory · ${escapeHtml(activeCompanyName())}</span></div></div>`;
 }
 
 function renderSuppliers() {
   const suppliers = data.suppliers.filter((supplier) => `${supplier.name} ${supplier.contact} ${supplier.email}`.toLowerCase().includes(state.supplierQuery.toLowerCase()));
-  return `<div class="toolbar"><div class="toolbar-left"><label class="search-field"><span>⌕</span><input id="supplier-search" type="search" placeholder="Search suppliers..." value="${escapeHtml(state.supplierQuery)}"></label></div><span style="color:#829087;font-size:9px">${data.suppliers.filter((supplier) => supplier.active).length} active partners</span></div><div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>SUPPLIER</th><th>CONTACT</th><th>EMAIL</th><th>PHONE</th><th>TERMS</th><th>STATUS</th><th></th></tr></thead><tbody>${suppliers.map((supplier) => `<tr data-search="${escapeHtml(`${supplier.name} ${supplier.contact} ${supplier.email}`.toLowerCase())}"><td><span class="cell-primary">${escapeHtml(supplier.name)}</span><small class="cell-sub">${escapeHtml(supplier.id)}</small></td><td>${escapeHtml(supplier.contact)}</td><td>${escapeHtml(supplier.email)}</td><td>${escapeHtml(supplier.phone)}</td><td>${escapeHtml(supplier.terms)}</td><td>${statusBadge(supplier.active ? 'Active' : 'Inactive')}</td><td>${state.role === 'Admin' && supplier.active ? `<button class="button button-small" data-action="edit-supplier" data-id="${escapeHtml(supplier.id)}">Edit</button> <button class="button button-small button-danger" data-action="deactivate-supplier" data-id="${escapeHtml(supplier.id)}">Deactivate</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="7"><div class="empty-state">No suppliers match that search.</div></td></tr>`}</tbody></table></div><div class="table-foot"><span>Supplier agency records</span><span>Only admin can manage supplier access.</span></div></div>`;
+  const rows = suppliers.map((supplier) => `<tr data-search="${escapeHtml(`${supplier.name} ${supplier.contact} ${supplier.email}`.toLowerCase())}"><td><span class="cell-primary">${escapeHtml(supplier.name)}</span><small class="cell-sub">${escapeHtml(supplier.id)}</small></td><td>${escapeHtml(supplier.contact)}</td><td>${escapeHtml(supplier.email)}</td><td>${escapeHtml(supplier.phone)}</td><td>${escapeHtml(supplier.terms)}</td><td>${statusBadge(supplier.active ? 'Active' : 'Inactive')}</td><td>${canPerformRole('Admin') && supplier.active ? `<button class="button button-small" data-action="edit-supplier" data-id="${escapeHtml(supplier.id)}">Edit</button> <button class="button button-small button-danger" data-action="deactivate-supplier" data-id="${escapeHtml(supplier.id)}">Deactivate</button>` : ''}</td></tr>`).join('');
+  return `<div class="toolbar"><div class="toolbar-left"><label class="search-field"><span>⌕</span><input id="supplier-search" type="search" placeholder="Search suppliers..." value="${escapeHtml(state.supplierQuery)}"></label></div><span style="color:#829087;font-size:9px">${data.suppliers.filter((supplier) => supplier.active).length} active partners</span></div><div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>SUPPLIER</th><th>CONTACT</th><th>EMAIL</th><th>PHONE</th><th>TERMS</th><th>STATUS</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="7"><div class="empty-state">No suppliers match that search.</div></td></tr>'}</tbody></table></div><div class="table-foot"><span>Supplier agency records · ${escapeHtml(activeCompanyName())}</span><span>Company administration</span></div></div>`;
 }
 
 function renderEmployees() {
-  if (state.role !== 'Admin') return '<div class="empty-state">This section is only available to administrators.</div>';
+  if (!isAdminRole()) return '<div class="empty-state">This section is only available to administrators.</div>';
   const employees = data.employees.filter((employee) => employee.active);
-  return `<div class="panel table-panel"><div class="panel-heading"><div><h2>Employee accounts</h2><p>${employees.length} active accounts can sign in to this demo</p></div><span class="status">Admin access</span></div><div class="table-wrap"><table><thead><tr><th>EMPLOYEE</th><th>EMAIL</th><th>ROLE</th><th>ACCOUNT</th><th></th></tr></thead><tbody>${employees.map((employee) => `<tr><td><span class="patient-cell"><span class="avatar avatar-green">${escapeHtml(initialsFor(employee.name))}</span><span class="cell-primary">${escapeHtml(employee.name)}<small class="cell-sub">${escapeHtml(employee.id)}</small></span></span></td><td>${escapeHtml(employee.email)}</td><td>${escapeHtml(employee.role)}</td><td>${statusBadge('Active')}</td><td>${employee.id === state.employeeId ? '<span class="cell-sub">Current account</span>' : `<button class="button button-small button-danger" data-action="remove-employee" data-id="${escapeHtml(employee.id)}">Remove</button>`}</td></tr>`).join('')}</tbody></table></div><div class="table-foot"><span>Demo credentials are stored in this browser only.</span><span>Use sign out to switch accounts.</span></div></div>`;
+  const rows = employees.map((employee) => `<tr><td><span class="patient-cell"><span class="avatar avatar-green">${escapeHtml(initialsFor(employee.name))}</span><span class="cell-primary">${escapeHtml(employee.name)}<small class="cell-sub">${escapeHtml(employee.id)}</small></span></span></td><td>${escapeHtml(employee.email)}</td><td>${escapeHtml(employee.role)}</td><td>${statusBadge('Active')}</td><td>${employee.id === state.employeeId ? '<span class="cell-sub">Current account</span>' : `<button class="button button-small button-danger" data-action="remove-employee" data-id="${escapeHtml(employee.id)}">Remove</button>`}</td></tr>`).join('');
+  return `<div class="panel table-panel"><div class="panel-heading"><div><h2>Employee accounts</h2><p>${employees.length} active accounts · ${escapeHtml(activeCompanyName())}</p></div><span class="status">Admin access</span></div><div class="table-wrap"><table><thead><tr><th>EMPLOYEE</th><th>EMAIL</th><th>ROLE</th><th>ACCOUNT</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="table-foot"><span>Demo credentials are stored in this browser only.</span><span>Accounts belong to this company profile.</span></div></div>`;
+}
+
+function renderCompanies() {
+  if (state.role !== 'Superadmin') return '<div class="empty-state">This section is only available to Superadmin.</div>';
+  const rows = data.companyProfiles.map((company) => {
+    const companyData = company.id === data.activeCompanyId ? snapshotCompanyData(data) : company.companyData;
+    const openOrders = companyData.purchaseOrders.filter((order) => order.status !== 'Sent').length;
+    return `<tr><td class="cell-primary">${escapeHtml(company.name)}<small class="cell-sub">${escapeHtml(company.id)}</small></td><td>${companyData.employees.length}</td><td>${companyData.patients.length}</td><td>${companyData.drugs.length}</td><td>${openOrders}</td><td>${statusBadge(company.id === data.activeCompanyId ? 'Active profile' : 'Available')}</td><td><span class="table-actions">${company.id !== data.activeCompanyId ? `<button class="button button-small button-primary" data-action="switch-company" data-id="${escapeHtml(company.id)}">Switch</button>` : ''}<button class="button button-small" data-action="rename-company" data-id="${escapeHtml(company.id)}">Rename</button></span></td></tr>`;
+  }).join('');
+  return `<div class="panel table-panel"><div class="panel-heading"><div><h2>Company profiles</h2><p>Each profile has separate employees, patients, doctors, inventory, purchase orders, and sales.</p></div><span class="status">${data.companyProfiles.length} profiles</span></div><div class="table-wrap"><table><thead><tr><th>COMPANY</th><th>EMPLOYEES</th><th>PATIENTS</th><th>PRODUCTS</th><th>OPEN ORDERS</th><th>STATUS</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="table-foot"><span>Profile changes do not move records between companies.</span><span>Company and account management is local to this demo.</span></div></div>`;
+}
+
+function openCompanyModal(company = null) {
+  if (company) {
+    openModal('Rename company profile', field('Company name', 'name', 'text', company.name), 'Save name', 'rename-company-submit', company.id);
+    return;
+  }
+  const fields = `${field('Company name', 'companyName')}${field('First Admin name', 'adminName')}${field('First Admin email', 'adminEmail', 'email')}${field('Temporary password', 'adminPassword', 'password')}`;
+  openModal('Create company profile', fields, 'Create profile', 'create-company');
+  $('#field-adminPassword').minLength = 6;
 }
 
 function openEmployeeModal() {
@@ -454,18 +619,29 @@ function openEmployeeModal() {
   $('#field-password').minLength = 6;
 }
 
+function openPatientModal(patient = null) {
+  const isEdit = Boolean(patient);
+  const fields = `${field('Full name', 'name', 'text', patient?.name || '')}${field('Age', 'age', 'number', patient?.age ?? '30')}${field('Phone', 'phone', 'tel', patient?.phone || '')}${field('Allergies', 'allergies', 'text', patient?.allergies || 'None recorded', false)}${isEdit ? `<div class="form-field full"><label>Patient ID</label><div class="summary-line"><strong>${escapeHtml(patient.id)}</strong></div></div>` : '<div class="form-field full"><p class="reference-intro">A unique patient ID will be assigned when this record is saved.</p></div>'}`;
+  openModal(isEdit ? `Edit ${patient.name}` : 'Add patient', fields, isEdit ? 'Save changes' : 'Add patient', isEdit ? 'edit-patient-submit' : 'create-patient', patient?.id || '');
+}
+
+function openDoctorModal(doctor = null) {
+  const isEdit = Boolean(doctor);
+  const fields = `${field('Full name', 'name', 'text', doctor?.name || '')}${field('Specialty', 'specialty', 'text', doctor?.specialty || '')}${field('Phone', 'phone', 'tel', doctor?.phone || '')}${field('Email', 'email', 'email', doctor?.email || '')}`;
+  openModal(isEdit ? `Edit ${doctor.name}` : 'Add doctor', fields, isEdit ? 'Save changes' : 'Add doctor', isEdit ? 'edit-doctor-submit' : 'create-doctor', doctor?.id || '');
+}
+
 function renderReports() {
   if (state.role === 'Technician') {
-    return `<div class="report-grid">${[['Products tracked', data.drugs.length, 'Active product lines'], ['Units on hand', data.drugs.reduce((sum, drug) => sum + drug.onHand, 0), 'Across all batches'], ['Below reorder point', lowStock().length, 'Needs a restock plan']].map(([label, value, foot]) => `<div class="report-stat"><span>${label}</span><strong>${value}</strong><small style="color:#4b835e">${foot}</small></div>`).join('')}</div><section class="panel"><div class="panel-heading"><div><h2>Stock watch</h2><p>Products at or below their reorder threshold</p></div><button class="text-link" data-nav="inventory">Open inventory →</button></div><div class="table-wrap"><table><thead><tr><th>PRODUCT</th><th>ON HAND</th><th>REORDER AT</th><th>BATCH</th><th>STATUS</th></tr></thead><tbody>${lowStock().map((drug) => `<tr><td class="cell-primary">${escapeHtml(drug.name)}</td><td>${drug.onHand}</td><td>${drug.reorder}</td><td>${escapeHtml(drug.batch)}</td><td>${statusBadge('Low stock')}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty-state">No products below their reorder point.</div></td></tr>'}</tbody></table></div></section>`;
+    const units = data.drugs.reduce((sum, drug) => sum + drug.onHand, 0);
+    return `<div class="report-grid">${[['Products tracked', data.drugs.length], ['Units on hand', units], ['Below reorder point', lowStock().length]].map(([label, value]) => `<div class="report-stat"><span>${label}</span><strong>${value}</strong></div>`).join('')}</div><section class="panel"><div class="panel-heading"><div><h2>Stock watch</h2><p>Products at or below their reorder threshold</p></div><button class="text-link" data-nav="inventory">Open inventory →</button></div><div class="table-wrap"><table><thead><tr><th>PRODUCT</th><th>ON HAND</th><th>REORDER AT</th><th>BATCH</th><th>STATUS</th></tr></thead><tbody>${lowStock().map((drug) => `<tr><td class="cell-primary">${escapeHtml(drug.name)}</td><td>${drug.onHand}</td><td>${drug.reorder}</td><td>${escapeHtml(drug.batch || 'Not received')}</td><td>${statusBadge('Low stock')}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty-state">No products below their reorder point.</div></td></tr>'}</tbody></table></div></section>`;
   }
-  if (state.role === 'Cashier') {
-    const shiftSales = data.sales.filter((sale) => sale.employeeId === state.employeeId);
-    const shiftTotal = shiftSales.reduce((sum, sale) => sum + sale.total, 0);
-    const averageSale = shiftSales.length ? shiftTotal / shiftSales.length : 0;
-    return `<div class="report-grid">${[['Shift sales', money(shiftTotal), 'Today · Northside'], ['Transactions', shiftSales.length, 'Processed this shift'], ['Basket average', money(averageSale), 'Today']].map(([label, value, foot]) => `<div class="report-stat"><span>${label}</span><strong>${value}</strong><small>${foot}</small></div>`).join('')}</div><section class="panel activity-panel"><div class="panel-heading"><div><h2>Recent shift transactions</h2><p>Payment and invoice activity</p></div><button class="text-link" data-nav="pos">New sale →</button></div><div class="table-wrap"><table><thead><tr><th>INVOICE</th><th>CUSTOMER</th><th>TIME</th><th>ITEMS</th><th>PAYMENT</th><th>TOTAL</th><th>STATUS</th></tr></thead><tbody>${shiftSales.map((sale) => `<tr><td class="cell-primary">${escapeHtml(sale.id)}</td><td>${escapeHtml(sale.patient)}</td><td>${escapeHtml(sale.time)}</td><td>${sale.items}</td><td>${escapeHtml(sale.payment)}</td><td class="cell-primary">${money(sale.total)}</td><td>${statusBadge(sale.status)}</td></tr>`).join('') || '<tr><td colspan="7"><div class="empty-state">No transactions recorded for this account yet.</div></td></tr>'}</tbody></table></div><div class="table-foot"><span>Shift total ${money(shiftTotal)}</span><span>Demo data</span></div></section>`;
-  }
-  const total = data.sales.reduce((sum, sale) => sum + sale.total, 0);
-  return `<div class="report-grid">${[['Sales today', money(107898), '↑ 12.8% from last Saturday'], ['Transactions', String(data.sales.length + 34), '↑ 8.2% from last Saturday'], ['Inventory value', money(data.drugs.reduce((sum, drug) => sum + drug.onHand * drug.price, 0)), `${lowStock().length} products below threshold`]].map(([label, value, foot]) => `<div class="report-stat"><span>${label}</span><strong>${value}</strong><small>${foot}</small></div>`).join('')}</div><div class="overview-grid"><section class="panel"><div class="panel-heading"><div><h2>Weekly sales</h2><p>Gross revenue by day · current week</p></div><select class="range-select"><option>This week</option><option>Last week</option></select></div><div class="panel-body"><div class="bar-report">${[['Mon',48],['Tue',67],['Wed',54],['Thu',78],['Fri',62],['Sat',91],['Sun',36]].map(([day, height]) => `<div class="bar-report-item"><i style="height:${height}%"></i>${day}</div>`).join('')}</div></div></section><section class="panel"><div class="panel-heading"><div><h2>Sales mix</h2><p>By product category</p></div></div><div class="panel-body"><div class="split-line"><i style="width:44%"></i><i style="width:31%"></i><i style="width:25%"></i></div><div class="split-legend"><span><i class="legend-dot"></i>Prescription 44%</span><span><i class="legend-dot alt"></i>OTC 31%</span><span><i class="legend-dot" style="background:#d2a26e"></i>Other 25%</span></div><div style="margin-top:19px">${[['Prescription sales', money(total * .54)], ['OTC & wellness', money(total * .31)], ['Other', money(total * .15)]].map(([label, value]) => `<div class="summary-line"><span>${label}</span><strong>${value}</strong></div>`).join('')}</div></div></section><section class="panel activity-panel"><div class="panel-heading"><div><h2>Inventory watch</h2><p>Products at or below their reorder threshold</p></div><button class="text-link" data-nav="inventory">Open inventory →</button></div><div class="table-wrap"><table><thead><tr><th>PRODUCT</th><th>ON HAND</th><th>REORDER AT</th><th>SUPPLIER</th><th>STATUS</th></tr></thead><tbody>${lowStock().map((drug) => `<tr><td class="cell-primary">${escapeHtml(drug.name)}</td><td>${drug.onHand}</td><td>${drug.reorder}</td><td>${escapeHtml(drug.supplier)}</td><td>${statusBadge('Low stock')}</td></tr>`).join('') || `<tr><td colspan="5"><div class="empty-state">No low-stock products.</div></td></tr>`}</tbody></table></div></section></div>`;
+  const sales = state.role === 'Cashier' ? data.sales.filter((sale) => sale.employeeId === state.employeeId) : data.sales;
+  const salesTotal = sales.reduce((sum, sale) => sum + sale.total, 0);
+  const inventoryValue = data.drugs.reduce((sum, drug) => sum + drug.onHand * drug.price, 0);
+  const stats = [['Sales recorded', money(salesTotal)], ['Transactions', sales.length], ['Inventory value', money(inventoryValue)]];
+  const rows = sales.slice(0, 10).map((sale) => `<tr><td class="cell-primary">${escapeHtml(sale.id)}</td><td>${escapeHtml(sale.patient)}</td><td>${escapeHtml(sale.time)}</td><td>${sale.items}</td><td>${escapeHtml(sale.payment)}</td><td>${money(sale.total)}</td></tr>`).join('');
+  return `<div class="report-grid">${stats.map(([label, value]) => `<div class="report-stat"><span>${label}</span><strong>${value}</strong></div>`).join('')}</div><section class="panel activity-panel"><div class="panel-heading"><div><h2>${state.role === 'Cashier' ? 'Shift transactions' : 'Recent transactions'}</h2><p>${escapeHtml(activeCompanyName())}</p></div></div><div class="table-wrap"><table><thead><tr><th>INVOICE</th><th>CUSTOMER</th><th>TIME</th><th>ITEMS</th><th>PAYMENT</th><th>TOTAL</th></tr></thead><tbody>${rows || '<tr><td colspan="6"><div class="empty-state">No transactions recorded yet.</div></td></tr>'}</tbody></table></div></section>`;
 }
 
 function openModal(title, fields, submitLabel, action, id = '') {
@@ -473,29 +649,73 @@ function openModal(title, fields, submitLabel, action, id = '') {
   $('#modal-root input, #modal-root select')?.focus();
 }
 
+function openDrugDetails(drug) {
+  const detail = (label, value) => `<div class="form-field full"><label>${label}</label><div class="summary-line"><span>${escapeHtml(value || 'Not listed in the supplied references.')}</span></div></div>`;
+  const fields = `${detail('Strength', drug.strength)}${detail('Detailed specification', drug.specification)}${detail('Indication', drug.indication)}${detail('Unit size', drug.unitSize)}${detail('Pack size', drug.packSize)}${detail('Reference', drug.referenceSource)}`;
+  openModal(`${drug.name} · product details`, fields, 'Close', 'view-only', drug.id);
+}
+
+function renderDrugReferenceResults(query) {
+  const resultsElement = $('#reference-results');
+  const normalizedQuery = query.trim().toLowerCase();
+  if (normalizedQuery.length < 2) {
+    resultsElement.innerHTML = '<p class="reference-empty">Enter at least two characters to search the medicine references.</p>';
+    return;
+  }
+  const matches = DRUG_REFERENCE.map((entry, index) => ({ entry, index })).filter(({ entry }) =>
+    `${entry.name} ${entry.genericName || ''} ${entry.strength || ''} ${entry.specification || ''} ${entry.indication || ''} ${entry.unitSize || ''} ${entry.packSize || ''}`.toLowerCase().includes(normalizedQuery)
+  );
+  const results = matches.slice(0, 30).map(({ entry, index }) => {
+    const alreadyAdded = data.drugs.some((drug) => drug.name.trim().toLowerCase() === entry.name.trim().toLowerCase());
+    const description = ['strength', 'specification', 'indication'].filter((key) => entry[key]).map((key) => `<p><strong>${key[0].toUpperCase()}${key.slice(1)}:</strong> ${escapeHtml(entry[key])}</p>`).join('');
+    return `<article class="reference-result"><div class="reference-result-heading"><strong>${escapeHtml(entry.name)}</strong><span class="reference-source">${entry.type === 'approval' ? 'Approval reference' : 'Tender reference'}</span></div>${description}<div class="reference-result-footer"><small>${escapeHtml(entry.source)}</small><button class="button button-small button-primary" data-action="add-reference-product" data-id="${index}" ${alreadyAdded ? 'disabled' : ''}>${alreadyAdded ? 'Already in inventory' : 'Add to inventory'}</button></div></article>`;
+  }).join('');
+  resultsElement.innerHTML = results ? `${results}${matches.length > 30 ? `<p class="reference-empty">Showing 30 of ${matches.length} matches. Refine your search.</p>` : ''}` : '<p class="reference-empty">No reference entries match that search.</p>';
+}
+
+function openDrugReferenceModal() {
+  $('#modal-root').innerHTML = `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal reference-modal" role="dialog" aria-modal="true" aria-labelledby="reference-modal-title"><div class="modal-heading"><h2 id="reference-modal-title">Drug reference</h2><button class="modal-close" type="button" data-action="dismiss-modal" aria-label="Close">×</button></div><div class="modal-form"><p class="reference-intro">${DRUG_REFERENCE.length.toLocaleString()} source entries. Reference records do not include your stock or retail price.</p><label class="search-field reference-search"><span>⌕</span><input id="reference-search" type="search" placeholder="Search name, strength, specification, or indication" autocomplete="off"></label><div id="reference-results" class="reference-results" aria-live="polite"></div></div></section></div>`;
+  renderDrugReferenceResults('');
+  $('#reference-search')?.focus();
+}
+
+function openReferenceProductModal(reference, referenceIndex) {
+  const details = [reference.specification, reference.indication, reference.unitSize && `Unit size: ${reference.unitSize}`, reference.packSize && `Pack size: ${reference.packSize}`, reference.packingType && `Packing type: ${reference.packingType}`, reference.packingStandard && `Packing standard: ${reference.packingStandard}`].filter(Boolean).map(escapeHtml).join('<br>');
+  const fields = `${field('Product name / brand', 'name', 'text', reference.name)}${field('Medicine / generic name', 'generic', 'text', reference.genericName || reference.name)}${field('Strength', 'strength', 'text', reference.strength || '', false)}${field('Inventory category', 'category')}${field('Retail price per unit (INR)', 'price', 'number')}${field('Reorder threshold (units)', 'reorder', 'number')}<div class="form-field full"><label>Reference details</label><div class="reference-detail-copy">${details || 'No additional specification was listed.'}<small>${escapeHtml(reference.source)}</small></div></div><div class="form-field full"><p class="reference-intro">This creates a zero-stock item. Enter its actual unit price and reorder threshold; receive stock with batch and expiry details separately.</p></div>`;
+  openModal('Add reference product', fields, 'Add to inventory', 'create-reference-drug', String(referenceIndex));
+}
+
 function field(label, name, type = 'text', value = '', required = true, options = '') {
   const id = `field-${name}`;
-  const input = type === 'select' ? `<select id="${id}" name="${name}" ${required ? 'required' : ''}>${options}</select>` : `<input id="${id}" name="${name}" type="${type}" value="${escapeHtml(value)}" ${required ? 'required' : ''}>`;
+  const input = type === 'select'
+    ? `<select id="${id}" name="${name}" ${required ? 'required' : ''}>${options}</select>`
+    : `<input id="${id}" name="${name}" type="${type}" value="${escapeHtml(value)}" ${required ? 'required' : ''}>`;
   return `<div class="form-field"><label for="${id}">${label}</label>${input}</div>`;
 }
 
-function openSupplierModal(supplier) {
+function openSupplierModal(supplier = null) {
   const isEdit = Boolean(supplier);
-  openModal(isEdit ? 'Edit supplier' : 'Add supplier', `${field('Agency name', 'name', 'text', supplier?.name || '')}${field('Contact name', 'contact', 'text', supplier?.contact || '')}${field('Email', 'email', 'email', supplier?.email || '')}${field('Phone', 'phone', 'tel', supplier?.phone || '')}${field('Payment terms', 'terms', 'text', supplier?.terms || 'Net 30')}`, isEdit ? 'Save changes' : 'Add supplier', isEdit ? 'save-supplier' : 'create-supplier', supplier?.id || '');
+  const fields = `${field('Agency name', 'name', 'text', supplier?.name || '')}${field('Contact name', 'contact', 'text', supplier?.contact || '')}${field('Email', 'email', 'email', supplier?.email || '')}${field('Phone', 'phone', 'tel', supplier?.phone || '')}${field('Payment terms', 'terms', 'text', supplier?.terms || 'Net 30')}`;
+  openModal(isEdit ? 'Edit supplier' : 'Add supplier', fields, isEdit ? 'Save changes' : 'Add supplier', isEdit ? 'save-supplier' : 'create-supplier', supplier?.id || '');
 }
 
-function openPoModal() {
+function openPoModal(selectedDrug = null) {
   const suppliers = data.suppliers.filter((supplier) => supplier.active);
-  const supplierField = state.role === 'Admin' ? field('Supplier', 'supplier', 'select', '', false, `<option value="">Not assigned yet</option>${suppliers.map((supplier) => `<option value="${escapeHtml(supplier.name)}">${escapeHtml(supplier.name)}</option>`).join('')}`) : '';
-  openModal('New purchase order', `${supplierField}${field('Add product', 'drugId', 'select', '', true, data.drugs.map((drug) => `<option value="${escapeHtml(drug.id)}">${escapeHtml(drug.name)} · ${drug.onHand} on hand</option>`).join(''))}${field('Quantity', 'quantity', 'number', '24')}`, 'Create draft', 'create-po');
+  const supplierField = canPerformRole('Admin')
+    ? field('Supplier', 'supplier', 'select', '', false, `<option value="">Not assigned yet</option>${suppliers.map((supplier) => `<option value="${escapeHtml(supplier.name)}">${escapeHtml(supplier.name)}</option>`).join('')}`)
+    : '';
+  const quantity = selectedDrug ? Math.max(1, selectedDrug.reorder - selectedDrug.onHand) : 24;
+  const productOptions = data.drugs.map((drug) => `<option value="${escapeHtml(drug.id)}" ${drug.id === selectedDrug?.id ? 'selected' : ''}>${escapeHtml(drug.name)} · ${drug.onHand} on hand</option>`).join('');
+  openModal(selectedDrug ? `Restock ${selectedDrug.name}` : 'New purchase order', `${supplierField}${field('Add product', 'drugId', 'select', '', true, productOptions)}${field('Quantity', 'quantity', 'number', String(quantity))}`, 'Create draft', 'create-po');
 }
 
 function openPoItemModal(order) {
-  openModal(`Add to ${order.id}`, `${field('Product', 'drugId', 'select', '', true, data.drugs.map((drug) => `<option value="${escapeHtml(drug.id)}">${escapeHtml(drug.name)} · ${drug.onHand} on hand</option>`).join(''))}${field('Quantity', 'quantity', 'number', '24')}`, 'Add item', 'add-po-item-submit', order.id);
+  const products = data.drugs.map((drug) => `<option value="${escapeHtml(drug.id)}">${escapeHtml(drug.name)} · ${drug.onHand} on hand</option>`).join('');
+  openModal(`Add to ${order.id}`, `${field('Product', 'drugId', 'select', '', true, products)}${field('Quantity', 'quantity', 'number', '24')}`, 'Add item', 'add-po-item-submit', order.id);
 }
 
-function recordPoAudit(order, action, actor = state.role === 'Admin' ? 'Maya Chen' : state.role) {
-  if (!order.audit) order.audit = [];
+function recordPoAudit(order, action, actor = data.employees.find((employee) => employee.id === state.employeeId)?.name || state.role) {
+  order.audit ||= [];
   order.audit.push({ action, actor, at: new Date().toISOString() });
 }
 
@@ -510,8 +730,10 @@ function signIn(employee) {
 }
 
 function renderLoginAccounts() {
-  const avatars = { Admin: 'avatar-green', Pharmacist: 'avatar-blue', Technician: 'avatar-orange', Cashier: 'avatar-lime' };
-  const accounts = data.employees.filter((employee) => employee.active);
+  const avatars = { Superadmin: 'avatar-orange', Admin: 'avatar-green', Pharmacist: 'avatar-blue', Technician: 'avatar-orange', Cashier: 'avatar-lime' };
+  const accounts = [...data.superadmins, ...data.employees].filter((employee) => employee.active);
+  $('#login-company-name').textContent = activeCompanyName().toUpperCase();
+  $('#login-hint').textContent = `${activeCompanyName()} staff access.`;
   $('#demo-account-list').innerHTML = accounts.map((employee) => `<button class="demo-account" type="button" data-demo-email="${escapeHtml(employee.email)}" data-demo-password="${escapeHtml(employee.password)}"><span class="avatar ${avatars[employee.role] || 'avatar-green'}">${escapeHtml(initialsFor(employee.name))}</span><span class="demo-account-copy"><strong>${escapeHtml(employee.name)}</strong><small>${escapeHtml(employee.role)} · ${escapeHtml(employee.email)}</small></span><span class="demo-account-use">Use account →</span></button>`).join('');
 }
 
@@ -531,9 +753,16 @@ function handleAction(action, id, element) {
   const role = state.role;
   if (action === 'logout') {
     signOut();
-  } else if (action === 'add-employee' && role === 'Admin') {
+  } else if (action === 'add-employee' && canPerformRole('Admin')) {
     openEmployeeModal();
-  } else if (action === 'remove-employee' && role === 'Admin') {
+  } else if (action === 'add-company' && role === 'Superadmin') {
+    openCompanyModal();
+  } else if (action === 'rename-company' && role === 'Superadmin') {
+    const company = data.companyProfiles.find((item) => item.id === id);
+    if (company) openCompanyModal(company);
+  } else if (action === 'switch-company' && role === 'Superadmin') {
+    switchCompanyProfile(id);
+  } else if (action === 'remove-employee' && canPerformRole('Admin')) {
     const employee = data.employees.find((item) => item.id === id);
     const activeAdmins = data.employees.filter((item) => item.active && item.role === 'Admin');
     if (!employee) return;
@@ -547,61 +776,78 @@ function handleAction(action, id, element) {
     if (element.classList.contains('modal-backdrop') && element !== element.parentElement) return;
     $('#modal-root').innerHTML = '';
   } else if (action === 'receive-stock') {
-    openModal('Receive stock', `${field('Product', 'drugId', 'select', '', true, data.drugs.map((drug) => `<option value="${escapeHtml(drug.id)}">${escapeHtml(drug.name)} · ${drug.onHand} on hand</option>`).join(''))}${field('Quantity received', 'quantity', 'number', '24')}${field('Batch number', 'batch', 'text', '')}${field('Expiry date', 'expiry', 'date', '')}`, 'Update inventory', 'receive-stock-submit');
+    const products = data.drugs.map((drug) => `<option value="${escapeHtml(drug.id)}">${escapeHtml(drug.name)} · ${drug.onHand} on hand</option>`).join('');
+    openModal('Receive stock', `${field('Product', 'drugId', 'select', '', true, products)}${field('Quantity received', 'quantity', 'number', '24')}${field('Batch number', 'batch', 'text', '')}${field('Expiry date', 'expiry', 'date', '')}`, 'Update inventory', 'receive-stock-submit');
   } else if (action === 'receive-one') {
     const drug = drugFor(id);
-    openModal(`Receive ${drug?.name || 'stock'}`, `${field('Quantity received', 'quantity', 'number', '24')}${field('Batch number', 'batch', 'text', drug?.batch || '')}${field('Expiry date', 'expiry', 'date', '')}`, 'Update inventory', 'receive-one-submit', id);
-  } else if (action === 'add-patient' && ['Admin', 'Pharmacist', 'Technician'].includes(role)) {
-    openModal('Add patient', `${field('Full name', 'name')}${field('Age', 'age', 'number', '30')}${field('Phone', 'phone', 'tel')}${field('Allergies', 'allergies', 'text', 'None recorded', false)}`, 'Add patient', 'create-patient');
-  } else if (action === 'add-doctor' && ['Admin', 'Pharmacist'].includes(role)) {
-    openModal('Add doctor', `${field('Full name', 'name')}${field('Specialty', 'specialty')}${field('Phone', 'phone', 'tel')}${field('Email', 'email', 'email')}`, 'Add doctor', 'create-doctor');
-  } else if (action === 'add-supplier' && role === 'Admin') {
+    if (!drug) return;
+    openModal(`Receive ${drug.name}`, `${field('Quantity received', 'quantity', 'number', '24')}${field('Batch number', 'batch', 'text', drug.batch || '')}${field('Expiry date', 'expiry', 'date', '')}`, 'Update inventory', 'receive-one-submit', id);
+  } else if (action === 'add-patient' && canPerformRole('Admin', 'Pharmacist', 'Technician')) {
+    openPatientModal();
+  } else if (action === 'edit-patient' && canPerformRole('Admin')) {
+    const patient = data.patients.find((item) => item.id === id);
+    if (patient) openPatientModal(patient);
+  } else if (action === 'add-doctor' && canPerformRole('Admin', 'Pharmacist')) {
+    openDoctorModal();
+  } else if (action === 'edit-doctor' && canPerformRole('Admin')) {
+    const doctor = data.doctors.find((item) => item.id === id);
+    if (doctor) openDoctorModal(doctor);
+  } else if (action === 'add-supplier' && canPerformRole('Admin')) {
     openSupplierModal();
-  } else if (action === 'edit-supplier' && role === 'Admin') {
+  } else if (action === 'edit-supplier' && canPerformRole('Admin')) {
     openSupplierModal(data.suppliers.find((supplier) => supplier.id === id));
-  } else if (action === 'deactivate-supplier' && role === 'Admin') {
+  } else if (action === 'deactivate-supplier' && canPerformRole('Admin')) {
     const supplier = data.suppliers.find((item) => item.id === id);
     if (supplier && confirm(`Deactivate ${supplier.name}? Existing purchase orders will remain unchanged.`)) {
       supplier.active = false;
       save(); render(); notify('Supplier deactivated.');
     }
-  } else if (action === 'new-po' && ['Admin', 'Pharmacist', 'Technician'].includes(role)) {
+  } else if (action === 'new-po' && canPerformRole('Admin', 'Pharmacist', 'Technician')) {
     openPoModal();
+  } else if (action === 'order-low-stock' && canPerformRole('Admin', 'Pharmacist', 'Technician')) {
+    const drug = drugFor(id);
+    if (drug && drug.onHand <= drug.reorder) openPoModal(drug);
   } else if (action === 'add-po-item') {
     const order = data.purchaseOrders.find((item) => item.id === id);
-    if (order?.status === 'Draft' && ['Admin', 'Pharmacist', 'Technician'].includes(role)) openPoItemModal(order);
-  } else if (action === 'finalize-po' && role === 'Admin') {
+    if (order?.status === 'Draft' && canPerformRole('Admin', 'Pharmacist', 'Technician')) openPoItemModal(order);
+  } else if (action === 'finalize-po' && canPerformRole('Admin')) {
     const order = data.purchaseOrders.find((item) => item.id === id);
     if (!order) return;
-    openModal(`${order.status === 'Draft' ? 'Review' : 'Approve'} ${order.id}`, `${field('Supplier', 'supplier', 'select', order.supplier, true, `<option value="">Choose supplier</option>${data.suppliers.filter((supplier) => supplier.active).map((supplier) => `<option value="${escapeHtml(supplier.name)}" ${supplier.name === order.supplier ? 'selected' : ''}>${escapeHtml(supplier.name)}</option>`).join('')}`)}<div class="form-field full"><label>Order summary</label><div class="summary-line"><span>${order.items.length} products · ${order.items.reduce((sum, item) => sum + item.quantity, 0)} units</span><strong>${money(order.items.reduce((sum, item) => sum + item.quantity * item.cost, 0))}</strong></div></div>`, 'Approve & send', 'send-po', id);
-  } else if (action === 'view-audit' && role === 'Admin') {
+    const suppliers = data.suppliers.filter((supplier) => supplier.active).map((supplier) => `<option value="${escapeHtml(supplier.name)}" ${supplier.name === order.supplier ? 'selected' : ''}>${escapeHtml(supplier.name)}</option>`).join('');
+    const summary = `<div class="form-field full"><label>Order summary</label><div class="summary-line"><span>${order.items.length} products · ${order.items.reduce((sum, item) => sum + item.quantity, 0)} units</span><strong>${money(order.items.reduce((sum, item) => sum + item.quantity * item.cost, 0))}</strong></div></div>`;
+    openModal(`${order.status === 'Draft' ? 'Review' : 'Approve'} ${order.id}`, `${field('Supplier', 'supplier', 'select', order.supplier, true, `<option value="">Choose supplier</option>${suppliers}`)}${summary}`, 'Approve & send', 'send-po', id);
+  } else if (action === 'view-audit' && canPerformRole('Admin')) {
     const order = data.purchaseOrders.find((item) => item.id === id);
     if (!order) return;
     const audit = order.audit?.length ? order.audit : [{ action: `Created order ${order.id}`, actor: order.createdBy || 'Pharmacy team', at: new Date(order.created).toISOString() }];
-    openModal(`${order.id} · audit trail`, `<div class="form-field full">${audit.slice().reverse().map((entry) => `<div class="summary-line"><span><strong>${escapeHtml(entry.action)}</strong><small class="cell-sub">${escapeHtml(entry.actor)}</small></span><time>${escapeHtml(new Date(entry.at).toLocaleString())}</time></div>`).join('')}</div>`, 'Close', 'view-only');
-  } else if (action === 'email-po' && role === 'Admin') {
+    const entries = audit.slice().reverse().map((entry) => `<div class="summary-line"><span><strong>${escapeHtml(entry.action)}</strong><small class="cell-sub">${escapeHtml(entry.actor)}</small></span><time>${escapeHtml(new Date(entry.at).toLocaleString())}</time></div>`).join('');
+    openModal(`${order.id} · audit trail`, `<div class="form-field full">${entries}</div>`, 'Close', 'view-only');
+  } else if (action === 'email-po' && canPerformRole('Admin')) {
     const order = data.purchaseOrders.find((item) => item.id === id);
     const supplier = data.suppliers.find((item) => item.name === order?.supplier);
     if (!order || !supplier) return notify('Assign an active supplier before emailing this order.');
     const lines = order.items.map((item) => `${item.name} — ${item.quantity} units`).join('\n');
-    window.location.href = `mailto:${encodeURIComponent(supplier.email)}?subject=${encodeURIComponent(`Purchase order ${order.id}`)}&body=${encodeURIComponent(`Hello ${supplier.contact},\n\nPlease find our order ${order.id}:\n${lines}\n\nEstimated total: ${money(order.items.reduce((sum, item) => sum + item.quantity * item.cost, 0))}\n\nThank you,\nNorthside Pharmacy`)}`;
+    const total = order.items.reduce((sum, item) => sum + item.quantity * item.cost, 0);
+    const body = `Hello ${supplier.contact},\n\nPlease find our order ${order.id}:\n${lines}\n\nEstimated total: ${money(total)}\n\nThank you,\n${activeCompanyName()}`;
+    window.location.href = `mailto:${encodeURIComponent(supplier.email)}?subject=${encodeURIComponent(`Purchase order ${order.id}`)}&body=${encodeURIComponent(body)}`;
     notify('Your email app will open with the order details.');
-  } else if (action === 'print-po' && role === 'Admin') {
+  } else if (action === 'print-po' && canPerformRole('Admin')) {
     const order = data.purchaseOrders.find((item) => item.id === id);
     if (!order) return;
     state.printOrder = id;
-    $('#content').innerHTML = `<div class="panel"><div class="panel-heading"><h2>Purchase order ${escapeHtml(order.id)}</h2><button class="button" data-action="print-now">Print / save PDF</button></div><div class="panel-body"><p>Supplier: <strong>${escapeHtml(order.supplier)}</strong></p><p>Created: ${escapeHtml(order.created)} · Created by ${escapeHtml(order.createdBy || 'Pharmacy team')}</p><div class="table-wrap"><table><thead><tr><th>PRODUCT</th><th>QUANTITY</th><th>UNIT COST</th><th>LINE TOTAL</th></tr></thead><tbody>${order.items.map((item) => `<tr><td>${escapeHtml(item.name)}</td><td>${item.quantity}</td><td>${money(item.cost)}</td><td>${money(item.quantity * item.cost)}</td></tr>`).join('')}</tbody></table></div><div class="summary-line summary-total"><strong>Estimated total</strong><strong>${money(order.items.reduce((sum, item) => sum + item.cost * item.quantity, 0))}</strong></div></div></div>`;
+    const items = order.items.map((item) => `<tr><td>${escapeHtml(item.name)}</td><td>${item.quantity}</td><td>${money(item.cost)}</td><td>${money(item.quantity * item.cost)}</td></tr>`).join('');
+    const total = order.items.reduce((sum, item) => sum + item.quantity * item.cost, 0);
+    $('#content').innerHTML = `<div class="panel"><div class="panel-heading"><h2>Purchase order ${escapeHtml(order.id)}</h2><button class="button" data-action="print-now">Print / save PDF</button></div><div class="panel-body"><p>Supplier: <strong>${escapeHtml(order.supplier)}</strong></p><p>Created: ${escapeHtml(order.created)} · Created by ${escapeHtml(order.createdBy || 'Pharmacy team')}</p><div class="table-wrap"><table><thead><tr><th>PRODUCT</th><th>QUANTITY</th><th>UNIT COST</th><th>LINE TOTAL</th></tr></thead><tbody>${items}</tbody></table></div><div class="summary-line summary-total"><strong>Estimated total</strong><strong>${money(total)}</strong></div></div></div>`;
   } else if (action === 'print-now') {
     window.print();
   } else if (action === 'add-cart') {
-    if (!['Admin', 'Cashier', 'Pharmacist'].includes(role)) return notify('Your role cannot process a sale.');
+    if (!canPerformRole('Admin', 'Cashier', 'Pharmacist')) return notify('Your role cannot process a sale.');
     const drug = drugFor(id);
     if (!drug || drug.onHand < 1) return notify('This product is out of stock.');
     const line = data.cart.find((item) => item.drugId === id);
-    if (line) {
-      if (line.quantity >= drug.onHand) return notify('There is not enough stock for that quantity.');
-      line.quantity += 1;
-    } else data.cart.push({ drugId: id, quantity: 1 });
+    if (line && line.quantity >= drug.onHand) return notify('There is not enough stock for that quantity.');
+    if (line) line.quantity += 1;
+    else data.cart.push({ drugId: id, quantity: 1 });
     render();
   } else if (action === 'cart-inc' || action === 'cart-dec') {
     const line = data.cart.find((item) => item.drugId === id);
@@ -614,46 +860,54 @@ function handleAction(action, id, element) {
   } else if (action === 'clear-cart') {
     state.posDiscountPercent = 0;
     state.posDiscountFlat = 0;
-    data.cart = []; render();
+    data.cart = [];
+    render();
   } else if (action === 'checkout') {
     if (!data.cart.length) return;
-    if (!['Admin', 'Cashier', 'Pharmacist'].includes(role)) return notify('Your role cannot process a sale.');
+    if (!canPerformRole('Admin', 'Cashier', 'Pharmacist')) return notify('Your role cannot process a sale.');
     const invalid = data.cart.find((line) => !drugFor(line.drugId) || drugFor(line.drugId).onHand < line.quantity);
     if (invalid) return notify('Stock changed. Review the basket and try again.');
-    const cartItems = data.cart.map((line) => ({ ...line, drug: drugFor(line.drugId) })).filter((line) => line.drug);
+    const cartItems = data.cart.map((line) => ({ ...line, drug: drugFor(line.drugId) }));
     const summary = calculateSaleSummary(cartItems, state.posDiscountPercent, state.posDiscountFlat);
     data.cart.forEach((line) => { drugFor(line.drugId).onHand -= line.quantity; });
     const sale = { id: `INV-${8292 + data.sales.length - 4}`, patient: $('#pos-patient')?.value || 'Walk-in customer', time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }), items: data.cart.reduce((sum, line) => sum + line.quantity, 0), total: summary.total, payment: $('#pos-payment')?.value || 'Card', status: 'Paid', employeeId: state.employeeId, discount: summary.discount };
     data.sales.unshift(sale);
     state.posDiscountPercent = 0;
     state.posDiscountFlat = 0;
-    data.cart = []; save(); render(); notify(`Sale ${sale.id} complete. Inventory updated.`);
-  } else if (action === 'approve-rx' && ['Admin', 'Pharmacist'].includes(role)) {
-    const rx = data.prescriptions.find((item) => item.id === id);
-    if (!rx || rx.status !== 'Pending review') return;
-    if (rx.allergy && !confirm(`${rx.allergy}. Confirm this prescription has been clinically checked and approve?`)) return;
-    rx.status = 'Approved'; save(); render(); notify(`${rx.id} approved for dispensing.`);
-  } else if (action === 'reject-rx' && ['Admin', 'Pharmacist'].includes(role)) {
-    const rx = data.prescriptions.find((item) => item.id === id);
-    if (!rx || rx.status !== 'Pending review') return;
-    rx.status = 'Rejected'; save(); render(); notify(`${rx.id} rejected.`);
-  } else if (action === 'dispense-rx' && ['Admin', 'Pharmacist'].includes(role)) {
-    const rx = data.prescriptions.find((item) => item.id === id);
-    if (!rx || rx.status !== 'Approved') return;
-    rx.status = 'Dispensed'; save(); render(); notify(`${rx.id} marked as dispensed.`);
+    data.cart = [];
+    save(); render(); notify(`Sale ${sale.id} complete. Inventory updated.`);
+  } else if (action === 'approve-rx' && canPerformRole('Admin', 'Pharmacist')) {
+    const prescription = data.prescriptions.find((item) => item.id === id);
+    if (!prescription || prescription.status !== 'Pending review') return;
+    if (prescription.allergy && !confirm(`${prescription.allergy}. Confirm this prescription has been clinically checked and approve?`)) return;
+    prescription.status = 'Approved'; save(); render(); notify(`${prescription.id} approved for dispensing.`);
+  } else if (action === 'reject-rx' && canPerformRole('Admin', 'Pharmacist')) {
+    const prescription = data.prescriptions.find((item) => item.id === id);
+    if (!prescription || prescription.status !== 'Pending review') return;
+    prescription.status = 'Rejected'; save(); render(); notify(`${prescription.id} rejected.`);
+  } else if (action === 'dispense-rx' && canPerformRole('Admin', 'Pharmacist')) {
+    const prescription = data.prescriptions.find((item) => item.id === id);
+    if (!prescription || prescription.status !== 'Approved') return;
+    prescription.status = 'Dispensed'; save(); render(); notify(`${prescription.id} marked as dispensed.`);
   } else if (action === 'patient-history') {
     const patient = data.patients.find((item) => item.id === id);
-    const history = data.prescriptions.filter((item) => item.patientId === id);
-    openModal(`${patient?.name || 'Patient'} · visit history`, `<div class="form-field full"><label>Known allergies</label><div class="summary-line"><span>${escapeHtml(patient?.allergies || 'None recorded')}</span></div></div><div class="form-field full"><label>Prescription history</label>${history.length ? history.map((rx) => `<div class="summary-line"><span><strong>${escapeHtml(rx.medication)}</strong><small class="cell-sub">${escapeHtml(rx.doctor)} · ${escapeHtml(rx.received)}</small></span>${statusBadge(rx.status)}</div>`).join('') : '<p class="visit-note">No prescription history recorded.</p>'}</div>`, 'Close', 'view-only');
+    if (!patient) return;
+    const history = data.prescriptions.filter((prescription) => prescription.patientId === id);
+    const rows = history.map((prescription) => `<div class="summary-line"><span><strong>${escapeHtml(prescription.medication)}</strong><small class="cell-sub">${escapeHtml(prescription.doctor)} · ${escapeHtml(prescription.received)}</small></span>${statusBadge(prescription.status)}</div>`).join('');
+    openModal(`${patient.name} · visit history`, `<div class="form-field full"><label>Known allergies</label><div class="summary-line"><span>${escapeHtml(patient.allergies || 'None recorded')}</span></div></div><div class="form-field full"><label>Prescription history</label>${rows || '<p class="visit-note">No prescription history recorded.</p>'}</div>`, 'Close', 'view-only');
   } else if (action === 'copy-referral-link') {
     const doctor = doctorFor(id);
     if (!doctor) return;
-    const referralLink = doctorReferralLink(doctor);
-    copyTextToClipboard(referralLink)
-      .then(() => notify(`Referral link copied for ${doctor.name}.`))
-      .catch(() => notify('Clipboard access is unavailable in this browser.'));
-  } else if (action === 'sync-indian-catalog') {
-    if (!['Admin', 'Pharmacist'].includes(role)) return notify('Only admin and pharmacist accounts can update the catalog.');
+    copyTextToClipboard(doctorReferralLink(doctor)).then(() => notify(`Referral link copied for ${doctor.name}.`)).catch(() => notify('Clipboard access is unavailable in this browser.'));
+  } else if (action === 'drug-details') {
+    const drug = drugFor(id);
+    if (drug) openDrugDetails(drug);
+  } else if (action === 'browse-reference' && canPerformRole('Admin', 'Pharmacist')) {
+    openDrugReferenceModal();
+  } else if (action === 'add-reference-product' && canPerformRole('Admin', 'Pharmacist')) {
+    const reference = DRUG_REFERENCE[Number(id)];
+    if (reference) openReferenceProductModal(reference, Number(id));
+  } else if (action === 'sync-indian-catalog' && canPerformRole('Admin', 'Pharmacist')) {
     refreshIndianDrugCatalog(element);
   }
 }
@@ -662,26 +916,82 @@ function handleFormSubmit(form) {
   const values = Object.fromEntries(new FormData(form).entries());
   const action = form.dataset.submitAction;
   const id = form.dataset.recordId;
-  if (action === 'create-employee' && state.role === 'Admin') {
-    if (data.employees.some((employee) => employee.email.toLowerCase() === values.email.toLowerCase())) return notify('An account already uses that email address.');
+  if (action === 'create-employee' && canPerformRole('Admin')) {
+    const email = values.email.trim().toLowerCase();
+    const employeeEmails = data.companyProfiles.flatMap((company) => (company.companyData?.employees || []).map((employee) => employee.email.toLowerCase()));
+    if (employeeEmails.includes(email) || data.superadmins.some((account) => account.email.toLowerCase() === email)) return notify('An account already uses that email address.');
     if (values.password.length < 6) return notify('Use a temporary password with at least 6 characters.');
-    data.employees.unshift({ id: `EMP-${Date.now()}`, name: values.name, email: values.email.toLowerCase(), password: values.password, role: values.role, active: true });
+    data.employees.unshift({ id: `EMP-${Date.now()}`, name: values.name.trim(), email, password: values.password, role: values.role, active: true });
     state.view = 'employees';
   } else if (action === 'create-patient') {
-    data.patients.unshift({ id: `PT-${2050 + data.patients.length}`, ...values, age: Number(values.age), lastVisit: 'No visits yet', initials: initialsFor(values.name) });
+    const name = values.name.trim();
+    const age = Number(values.age);
+    if (!name || !Number.isInteger(age) || age < 0 || !values.phone.trim()) return notify('Enter a patient name, valid age, and phone number.');
+    data.patients.unshift({ id: nextRecordId(data.patients, 'PT'), ...values, name, age, phone: values.phone.trim(), allergies: values.allergies.trim() || 'None recorded', lastVisit: 'No visits yet', initials: initialsFor(name) });
     state.view = 'patients';
   } else if (action === 'create-doctor') {
-    data.doctors.unshift({ id: `DR-${String(13 + data.doctors.length).padStart(3, '0')}`, ...values, referrals: 0 });
+    const name = values.name.trim();
+    if (!name || !values.specialty.trim() || !values.phone.trim() || !values.email.trim()) return notify('Enter a doctor name, specialty, phone, and email.');
+    data.doctors.unshift({ id: nextRecordId(data.doctors, 'DR'), ...values, name, specialty: values.specialty.trim(), phone: values.phone.trim(), email: values.email.trim().toLowerCase(), referrals: 0 });
+    state.view = 'doctors';
+  } else if (action === 'create-company' && state.role === 'Superadmin') {
+    const name = values.companyName.trim();
+    const adminName = values.adminName.trim();
+    const adminEmail = values.adminEmail.trim().toLowerCase();
+    if (!name || !adminName || !adminEmail || values.adminPassword.length < 6) return notify('Enter a company name, first Admin, email, and password of at least 6 characters.');
+    if (data.companyProfiles.some((company) => company.name.trim().toLowerCase() === name.toLowerCase())) return notify('A company profile already uses that name.');
+    const emailExists = data.superadmins.some((account) => account.email.toLowerCase() === adminEmail)
+      || data.companyProfiles.some((company) => (company.companyData?.employees || []).some((employee) => employee.email.toLowerCase() === adminEmail));
+    if (emailExists) return notify('An account already uses that email address.');
+    const admin = { id: `EMP-${Date.now()}`, name: adminName, email: adminEmail, password: values.adminPassword, role: 'Admin', active: true };
+    const company = { id: `CO-${Date.now()}`, name, companyData: createEmptyCompanyData(admin) };
+    data.companyProfiles.push(company);
+    data.activeCompanyId = company.id;
+    Object.assign(data, structuredClone(company.companyData));
+    state.view = 'overview';
+  } else if (action === 'rename-company-submit' && state.role === 'Superadmin') {
+    const company = data.companyProfiles.find((item) => item.id === id);
+    const name = values.name.trim();
+    if (!company || !name) return notify('Enter a company name.');
+    if (data.companyProfiles.some((item) => item.id !== id && item.name.trim().toLowerCase() === name.toLowerCase())) return notify('A company profile already uses that name.');
+    company.name = name;
+    state.view = 'companies';
+  } else if (action === 'edit-patient-submit' && canPerformRole('Admin')) {
+    const patient = data.patients.find((item) => item.id === id);
+    const name = values.name.trim();
+    const age = Number(values.age);
+    if (!patient || !name || !Number.isInteger(age) || age < 0 || !values.phone.trim()) return notify('Enter a patient name, valid age, and phone number.');
+    Object.assign(patient, { name, age, phone: values.phone.trim(), allergies: values.allergies.trim() || 'None recorded', initials: initialsFor(name) });
+    state.view = 'patients';
+  } else if (action === 'edit-doctor-submit' && canPerformRole('Admin')) {
+    const doctor = data.doctors.find((item) => item.id === id);
+    const name = values.name.trim();
+    if (!doctor || !name || !values.specialty.trim() || !values.phone.trim() || !values.email.trim()) return notify('Enter a doctor name, specialty, phone, and email.');
+    Object.assign(doctor, { name, specialty: values.specialty.trim(), phone: values.phone.trim(), email: values.email.trim().toLowerCase() });
     state.view = 'doctors';
   } else if (action === 'create-supplier' || action === 'save-supplier') {
+    if (!canPerformRole('Admin')) return;
     if (action === 'save-supplier') Object.assign(data.suppliers.find((supplier) => supplier.id === id), values);
     else data.suppliers.unshift({ id: `SU-${String(22 + data.suppliers.length).padStart(3, '0')}`, ...values, active: true });
     state.view = 'suppliers';
+  } else if (action === 'create-reference-drug' && canPerformRole('Admin', 'Pharmacist')) {
+    const reference = DRUG_REFERENCE[Number(id)];
+    const name = values.name.trim();
+    const generic = values.generic.trim();
+    const category = values.category.trim();
+    const price = Number(values.price);
+    const reorder = Number(values.reorder);
+    if (!reference || !name || !generic || !category || !Number.isFinite(price) || price <= 0 || values.reorder === '' || !Number.isInteger(reorder) || reorder < 0) return notify('Enter the product name, generic name, category, valid INR price, and reorder threshold.');
+    if (data.drugs.some((drug) => drug.name.trim().toLowerCase() === name.toLowerCase())) return notify('A product with that name is already in inventory.');
+    const nextId = data.drugs.reduce((largest, drug) => Math.max(largest, Number(drug.id.match(/^RX-(\d+)$/)?.[1]) || 0), 0) + 1;
+    data.drugs.unshift({ id: `RX-${String(nextId).padStart(3, '0')}`, name, generic, category, strength: values.strength.trim(), specification: reference.specification || '', indication: reference.indication || '', referenceSource: reference.source, unitSize: reference.unitSize || '', packSize: reference.packSize || '', packingType: reference.packingType || '', packingStandard: reference.packingStandard || '', onHand: 0, reorder, batch: '', expiry: '', price });
+    state.view = 'inventory';
   } else if (action === 'receive-stock-submit' || action === 'receive-one-submit') {
     const drug = drugFor(action === 'receive-one-submit' ? id : values.drugId);
     if (!drug) return;
     const quantity = Math.floor(Number(values.quantity));
     if (quantity < 1) return notify('Enter a quantity greater than zero.');
+    if (drug.onHand === 0 && (!values.batch.trim() || !values.expiry || Number.isNaN(new Date(`${values.expiry}T00:00:00`).getTime()))) return notify('Enter this stock batch number and expiry date before receiving the first stock.');
     drug.onHand += quantity;
     if (values.batch) drug.batch = values.batch;
     if (values.expiry) drug.expiry = new Date(`${values.expiry}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
@@ -691,7 +1001,7 @@ function handleFormSubmit(form) {
     const quantity = Math.floor(Number(values.quantity));
     if (!drug || quantity < 1) return notify('Choose a product and quantity greater than zero.');
     const item = { drugId: drug.id, name: drug.name, quantity, cost: Math.round(drug.price * .48 * 100) / 100 };
-    const order = { id: `PO-${1043 + data.purchaseOrders.length - 2}`, supplier: state.role === 'Admin' ? values.supplier : '', status: 'Draft', created: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }), items: [item], createdBy: state.role === 'Admin' ? 'Maya Chen' : state.role, audit: [] };
+    const order = { id: `PO-${1043 + data.purchaseOrders.length - 2}`, supplier: canPerformRole('Admin') ? values.supplier : '', status: 'Draft', created: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }), items: [item], createdBy: data.employees.find((employee) => employee.id === state.employeeId)?.name || state.role, audit: [] };
     recordPoAudit(order, `Created draft with ${quantity} × ${drug.name}`);
     data.purchaseOrders.unshift(order);
     state.view = 'purchase-orders';
@@ -708,11 +1018,12 @@ function handleFormSubmit(form) {
   } else if (action === 'send-po') {
     const order = data.purchaseOrders.find((item) => item.id === id);
     if (!order || !values.supplier || !order.items.length) return notify('Choose a supplier and add at least one item.');
+    const approver = data.employees.find((employee) => employee.id === state.employeeId)?.name || state.role;
     order.supplier = values.supplier;
     order.status = 'Sent';
-    order.approvedBy = 'Maya Chen';
+    order.approvedBy = approver;
     order.approvedAt = new Date().toISOString();
-    recordPoAudit(order, `Approved and sent to ${values.supplier}`, 'Maya Chen');
+    recordPoAudit(order, `Approved and sent to ${values.supplier}`, approver);
     state.view = 'purchase-orders';
   } else if (action === 'view-only') {
     $('#modal-root').innerHTML = '';
@@ -721,7 +1032,7 @@ function handleFormSubmit(form) {
   save();
   $('#modal-root').innerHTML = '';
   render();
-  const messages = { 'create-employee': 'Employee account created.', 'create-patient': 'Patient added.', 'create-doctor': 'Doctor added.', 'create-supplier': 'Supplier added.', 'save-supplier': 'Supplier updated.', 'receive-stock-submit': 'Inventory updated.', 'receive-one-submit': 'Inventory updated.', 'create-po': 'Purchase order draft created.', 'add-po-item-submit': 'Product added to the draft.', 'send-po': 'Purchase order approved and marked sent.' };
+  const messages = { 'create-employee': 'Employee account created.', 'create-patient': 'Patient added.', 'create-doctor': 'Doctor added.', 'create-company': 'Company profile created with a separate Admin and workspace.', 'rename-company-submit': 'Company profile renamed.', 'edit-patient-submit': 'Patient details updated.', 'edit-doctor-submit': 'Doctor details updated.', 'create-supplier': 'Supplier added.', 'save-supplier': 'Supplier updated.', 'create-reference-drug': 'Product added with zero stock. Receive stock to make it available for sale.', 'receive-stock-submit': 'Inventory updated.', 'receive-one-submit': 'Inventory updated.', 'create-po': 'Purchase order draft created.', 'add-po-item-submit': 'Product added to the draft.', 'send-po': 'Purchase order approved and marked sent.' };
   notify(messages[action] || 'Changes saved.');
 }
 
@@ -732,7 +1043,10 @@ function applyInventoryFilters() {
   const filter = $('#inventory-filter')?.value || 'All stock';
   $$('tr', rows).forEach((row) => {
     const matchesQuery = row.dataset.search.includes(query);
-    const matchesStock = filter === 'All stock' || (filter === 'Low stock' ? row.dataset.stock === 'low' : row.dataset.stock === 'in');
+    const matchesStock = filter === 'All stock'
+      || (filter === 'Low stock' && row.dataset.stock === 'low')
+      || (filter === 'No stock' && row.dataset.stock === 'none')
+      || (filter === 'In stock' && row.dataset.stock === 'in');
     row.hidden = !matchesQuery || !matchesStock;
   });
 }
@@ -749,19 +1063,24 @@ document.addEventListener('click', (event) => {
   const nav = event.target.closest('[data-view], [data-nav]');
   if (nav) {
     const view = nav.dataset.view || nav.dataset.nav;
-    if (permissions[state.role].includes(view)) { state.view = view; render(); }
-    else notify('This view is not available for your role.');
+    if (permissions[state.role].includes(view)) {
+      state.view = view;
+      render();
+      $('#sidebar').classList.remove('open');
+    } else notify('This view is not available for your role.');
     return;
   }
   const actionButton = event.target.closest('[data-action]');
-  if (actionButton) {
-    if (actionButton.dataset.action === 'dismiss-modal' && actionButton.classList.contains('modal-backdrop')) {
-      if (event.target === actionButton) $('#modal-root').innerHTML = '';
-      return;
-    }
-    if (actionButton.dataset.action === 'dismiss-modal' && actionButton.closest('.modal')) { $('#modal-root').innerHTML = ''; return; }
-    handleAction(actionButton.dataset.action, actionButton.dataset.id, actionButton);
+  if (!actionButton) return;
+  if (actionButton.dataset.action === 'dismiss-modal' && actionButton.classList.contains('modal-backdrop')) {
+    if (event.target === actionButton) $('#modal-root').innerHTML = '';
+    return;
   }
+  if (actionButton.dataset.action === 'dismiss-modal' && actionButton.closest('.modal')) {
+    $('#modal-root').innerHTML = '';
+    return;
+  }
+  handleAction(actionButton.dataset.action, actionButton.dataset.id, actionButton);
 });
 
 document.addEventListener('submit', (event) => {
@@ -769,12 +1088,16 @@ document.addEventListener('submit', (event) => {
     event.preventDefault();
     const email = $('#login-email').value.trim().toLowerCase();
     const password = $('#login-password').value;
-    const employee = data.employees.find((item) => item.active && item.email.toLowerCase() === email && item.password === password);
+    const superadmin = data.superadmins.find((item) => item.active && item.email.toLowerCase() === email && item.password === password);
+    const employee = superadmin || data.companyProfiles
+      .flatMap((company) => (company.companyData?.employees || []).map((item) => ({ ...item, companyId: company.id })))
+      .find((item) => item.active && item.email.toLowerCase() === email && item.password === password);
     if (!employee) {
       $('#login-error').textContent = 'That email and password do not match an active account.';
       $('#login-error').hidden = false;
       return;
     }
+    if (employee.companyId && employee.companyId !== data.activeCompanyId) switchCompanyProfile(employee.companyId);
     signIn(employee);
   } else if (event.target.id === 'modal-form') {
     event.preventDefault();
@@ -784,64 +1107,71 @@ document.addEventListener('submit', (event) => {
 
 document.addEventListener('input', (event) => {
   const input = event.target;
-  if (input.id === 'inventory-search') {
+  if (input.id === 'reference-search') {
+    renderDrugReferenceResults(input.value);
+  } else if (input.id === 'inventory-search') {
     state.inventoryQuery = input.value;
     applyInventoryFilters();
-  } else if (input.id === 'patient-search' || input.id === 'doctor-search' || input.id === 'supplier-search') {
-    const rowSelector = input.id === 'patient-search' ? '.patient-table-row' : 'tr[data-search]';
-    if (input.id === 'patient-search') {
-      state.patientQuery = input.value;
-      $('#content').innerHTML = renderPatients();
-      $('#patient-search').focus();
-      $('#patient-search').setSelectionRange(input.value.length, input.value.length);
-    } else {
-      const query = input.value.toLowerCase();
-      if (input.id === 'doctor-search') state.doctorQuery = input.value;
-      if (input.id === 'supplier-search') state.supplierQuery = input.value;
-      $$(rowSelector, $('#content')).forEach((row) => { row.hidden = !row.dataset.search.includes(query); });
-    }
+  } else if (input.id === 'patient-search') {
+    state.patientQuery = input.value;
+    $('#content').innerHTML = renderPatients();
+    $('#patient-search').focus();
+    $('#patient-search').setSelectionRange(input.value.length, input.value.length);
+  } else if (input.id === 'doctor-search' || input.id === 'supplier-search') {
+    if (input.id === 'doctor-search') state.doctorQuery = input.value;
+    else state.supplierQuery = input.value;
+    const query = input.value.toLowerCase();
+    $$('tr[data-search]', $('#content')).forEach((row) => { row.hidden = !row.dataset.search.includes(query); });
   } else if (input.id === 'pos-search') {
     const query = input.value.toLowerCase();
     $$('.pos-product').forEach((button) => { button.hidden = !button.textContent.toLowerCase().includes(query); });
   } else if (input.id === 'pos-discount-percent') {
-    const value = Number(input.value) || 0;
-    state.posDiscountPercent = Math.min(100, Math.max(0, value));
+    state.posDiscountPercent = Math.min(100, Math.max(0, Number(input.value) || 0));
     render();
   } else if (input.id === 'pos-discount-flat') {
-    const value = Number(input.value) || 0;
-    state.posDiscountFlat = Math.max(0, value);
+    state.posDiscountFlat = Math.max(0, Number(input.value) || 0);
     render();
   } else if (input.id === 'global-search') {
     state.globalQuery = input.value.trim().toLowerCase();
     if (state.globalQuery.length < 2) return;
     const patient = permissions[state.role].includes('patients') ? data.patients.find((item) => `${item.name} ${item.id}`.toLowerCase().includes(state.globalQuery)) : null;
     const drug = data.drugs.find((item) => `${item.name} ${item.generic}`.toLowerCase().includes(state.globalQuery));
-    if (patient) { state.view = 'patients'; state.patientQuery = patient.name; render(); $('#patient-search')?.focus(); }
-    else if (drug && permissions[state.role].includes('inventory')) { state.view = 'inventory'; state.inventoryQuery = drug.name; render(); $('#inventory-search')?.focus(); }
-    else if (drug && permissions[state.role].includes('pos')) { state.view = 'pos'; render(); const search = $('#pos-search'); search.value = drug.name; search.dispatchEvent(new Event('input', { bubbles: true })); search.focus(); }
+    if (patient) {
+      state.view = 'patients'; state.patientQuery = patient.name; render(); $('#patient-search')?.focus();
+    } else if (drug && permissions[state.role].includes('inventory')) {
+      state.view = 'inventory'; state.inventoryQuery = drug.name; render(); $('#inventory-search')?.focus();
+    } else if (drug && permissions[state.role].includes('pos')) {
+      state.view = 'pos'; render();
+      const search = $('#pos-search');
+      search.value = drug.name;
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+      search.focus();
+    }
   }
 });
 
 document.addEventListener('change', (event) => {
   const target = event.target;
-  if (target.id === 'inventory-filter') {
-    applyInventoryFilters();
-  } else if (target.id === 'prescription-filter') {
-    state.prescriptionFilter = target.value; render();
-  } else if (target.id === 'po-filter') {
-    state.poFilter = target.value; render();
-  }
+  if (target.id === 'inventory-filter') applyInventoryFilters();
+  else if (target.id === 'prescription-filter') { state.prescriptionFilter = target.value; render(); }
+  else if (target.id === 'po-filter') { state.poFilter = target.value; render(); }
 });
 
 $('#mobile-menu').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
+$('#dismiss-viewport-notice').addEventListener('click', () => {
+  viewportNoticeDismissed = true;
+  $('#viewport-notice').hidden = true;
+});
+window.addEventListener('resize', updateViewportNotice);
 $('#notifications-button').addEventListener('click', () => {
-  if (['Admin', 'Pharmacist'].includes(state.role)) notify(`${pendingCount()} prescriptions and ${lowStock().length} low-stock products need attention.`);
+  if (canPerformRole('Admin', 'Pharmacist')) notify(`${pendingCount()} prescriptions and ${lowStock().length} low-stock products need attention.`);
   else if (state.role === 'Technician') notify(`${lowStock().length} products are at or below their reorder point.`);
   else notify('No new shift notifications.');
 });
 document.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-    event.preventDefault(); $('#global-search').focus();
+    event.preventDefault();
+    $('#global-search').focus();
   }
   if (event.key === 'Escape') $('#modal-root').innerHTML = '';
 });

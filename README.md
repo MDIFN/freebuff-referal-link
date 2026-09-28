@@ -2,6 +2,19 @@
 
 A responsive, dependency-free pharmacy operations demo. Open `index.html` in a browser to sign in to the role-aware workspace. All displayed prices use INR.
 
+## Drug reference and inventory
+
+The inventory's **Drug reference** search is built from the uploaded CDSCO approval workbook and PMBI tender PDF. It includes medicine names, available strengths/specifications, indications, and tender pack details. It deliberately excludes source serial numbers, drug codes, approval dates, and tender requirement quantities. These reference documents do not provide pharmacy stock, batch/expiry data, or retail prices.
+
+To rebuild `drug-reference.js` after replacing either source file, install the parser dependencies and run:
+
+```sh
+python3 -m pip install -r scripts/requirements-drug-reference.txt
+python3 scripts/build_drug_reference.py
+```
+
+Adding a reference item to inventory requires a locally chosen category, reorder threshold, and actual INR unit price. New items start at zero stock and are not available for sale until the first stock receipt includes its batch number and expiry date. The reference catalog itself is local and searchable; it does not claim source tender quantities as pharmacy stock.
+
 ## Optional pharmacy price refresh
 
 The app can use a small Node.js sidecar to refresh configured products from direct product pages. It does not scrape search pages: 1mg and PharmEasy disallow their search paths in `robots.txt`. Only HTTPS URLs on 1mg, PharmEasy, Netmeds, or Apollo Pharmacy are accepted; each source's `robots.txt` is checked before fetching. Prices are applied only when the page contains a matching Product JSON-LD offer in INR that is not marked out of stock. Unverified products keep their existing local price.
@@ -13,6 +26,14 @@ Use Node.js 20 or newer:
 3. Run `node --test server.test.js` to test the endpoint and parser.
 
 The server-side refresh is optional. The original curated catalog remains available if the server is stopped or a price cannot be verified. This demo server has no user authentication; do not expose it publicly without adding appropriate access controls, rate limits, and product-price review.
+
+## Company profiles
+
+Sign in as Superadmin to create, rename, and switch company profiles. Northside Pharmacy is the original profile; every additional profile starts with its own Admin account and empty employees, patients, doctors, suppliers, inventory, prescriptions, orders, and sales. Profile data is stored separately in this browser's local storage. Company Admins manage their own records, including patient and doctor edits; Superadmin manages all company profiles.
+
+Superadmin demo login: `superadmin@hamsaahrx.demo` / `super123`.
+
+On screens narrower than 800px, the app displays a dismissible notice that tables and detailed content may require horizontal scrolling and suggests a tablet or desktop for the clearest view.
 
 ## Page previews
 

@@ -212,7 +212,7 @@ function createAppServer({ sources = readSources(), fetchImpl = fetch } = {}) {
       return response.end('Method not allowed');
     }
     const requested = url.pathname === '/' ? '/index.html' : url.pathname;
-    if (!['/index.html', '/app.js', '/styles.css'].includes(requested)) {
+    if (!['/index.html', '/app.js', '/styles.css', '/drug-reference.js'].includes(requested)) {
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       return response.end('Not found');
     }
