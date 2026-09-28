@@ -105,6 +105,24 @@ const pendingCount = () => data.prescriptions.filter((item) => item.status === '
 const lowStock = () => data.drugs.filter((drug) => drug.onHand <= drug.reorder);
 const initialsFor = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join('');
 const drugFor = (id) => data.drugs.find((drug) => drug.id === id);
+const doctorFor = (id) => data.doctors.find((doctor) => doctor.id === id);
+const doctorReferralLink = (doctor) => `https://freebuff.app/r/${encodeURIComponent((doctor?.id || 'doctor').toLowerCase())}`;
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const helper = document.createElement('textarea');
+  helper.value = text;
+  helper.setAttribute('readonly', '');
+  helper.style.position = 'fixed';
+  helper.style.opacity = '0';
+  document.body.append(helper);
+  helper.select();
+  document.execCommand('copy');
+  helper.remove();
+}
 
 function migrateCurrency(record) {
   if (record.currency === 'INR') return;
@@ -309,7 +327,7 @@ function renderPatients() {
 
 function renderDoctors() {
   const doctors = data.doctors.filter((doctor) => `${doctor.name} ${doctor.specialty} ${doctor.email}`.toLowerCase().includes(state.doctorQuery.toLowerCase()));
-  return `<div class="toolbar"><div class="toolbar-left"><label class="search-field"><span>⌕</span><input id="doctor-search" type="search" placeholder="Search doctors..." value="${escapeHtml(state.doctorQuery)}"></label></div><span style="color:#829087;font-size:9px">${data.doctors.length} clinicians</span></div><div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>CLINICIAN</th><th>SPECIALTY</th><th>PHONE</th><th>EMAIL</th><th>REFERRALS</th><th>STATUS</th></tr></thead><tbody>${doctors.map((doctor, index) => `<tr data-search="${escapeHtml(`${doctor.name} ${doctor.specialty} ${doctor.email}`.toLowerCase())}"><td><span class="patient-cell"><span class="avatar ${index % 2 ? 'avatar-blue' : 'avatar-green'}">${escapeHtml(initialsFor(doctor.name.replace(/^Dr\.\s*/, '')))}</span><span class="cell-primary">${escapeHtml(doctor.name)}<small class="cell-sub">${escapeHtml(doctor.id)}</small></span></span></td><td>${escapeHtml(doctor.specialty)}</td><td>${escapeHtml(doctor.phone)}</td><td>${escapeHtml(doctor.email)}</td><td>${doctor.referrals} this month</td><td>${statusBadge('Active')}</td></tr>`).join('') || `<tr><td colspan="6"><div class="empty-state">No doctors match that search.</div></td></tr>`}</tbody></table></div><div class="table-foot"><span>Showing ${doctors.length} of ${data.doctors.length} clinicians</span><span>Provider directory · Northside</span></div></div>`;
+  return `<div class="toolbar"><div class="toolbar-left"><label class="search-field"><span>⌕</span><input id="doctor-search" type="search" placeholder="Search doctors..." value="${escapeHtml(state.doctorQuery)}"></label></div><span style="color:#829087;font-size:9px">${data.doctors.length} clinicians</span></div><div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>CLINICIAN</th><th>SPECIALTY</th><th>PHONE</th><th>EMAIL</th><th>REFERRALS</th><th>STATUS</th><th>REFERRAL LINK</th></tr></thead><tbody>${doctors.map((doctor, index) => `<tr data-search="${escapeHtml(`${doctor.name} ${doctor.specialty} ${doctor.email}`.toLowerCase())}"><td><span class="patient-cell"><span class="avatar ${index % 2 ? 'avatar-blue' : 'avatar-green'}">${escapeHtml(initialsFor(doctor.name.replace(/^Dr\.\s*/, '')))}</span><span class="cell-primary">${escapeHtml(doctor.name)}<small class="cell-sub">${escapeHtml(doctor.id)}</small></span></span></td><td>${escapeHtml(doctor.specialty)}</td><td>${escapeHtml(doctor.phone)}</td><td>${escapeHtml(doctor.email)}</td><td>${doctor.referrals} this month</td><td>${statusBadge('Active')}</td><td><button class="button button-small" data-action="copy-referral-link" data-id="${escapeHtml(doctor.id)}">Copy link</button></td></tr>`).join('') || `<tr><td colspan="7"><div class="empty-state">No doctors match that search.</div></td></tr>`}</tbody></table></div><div class="table-foot"><span>Showing ${doctors.length} of ${data.doctors.length} clinicians</span><span>Provider directory · Northside</span></div></div>`;
 }
 
 function renderSuppliers() {
@@ -515,6 +533,13 @@ function handleAction(action, id, element) {
     const patient = data.patients.find((item) => item.id === id);
     const history = data.prescriptions.filter((item) => item.patientId === id);
     openModal(`${patient?.name || 'Patient'} · visit history`, `<div class="form-field full"><label>Known allergies</label><div class="summary-line"><span>${escapeHtml(patient?.allergies || 'None recorded')}</span></div></div><div class="form-field full"><label>Prescription history</label>${history.length ? history.map((rx) => `<div class="summary-line"><span><strong>${escapeHtml(rx.medication)}</strong><small class="cell-sub">${escapeHtml(rx.doctor)} · ${escapeHtml(rx.received)}</small></span>${statusBadge(rx.status)}</div>`).join('') : '<p class="visit-note">No prescription history recorded.</p>'}</div>`, 'Close', 'view-only');
+  } else if (action === 'copy-referral-link') {
+    const doctor = doctorFor(id);
+    if (!doctor) return;
+    const referralLink = doctorReferralLink(doctor);
+    copyTextToClipboard(referralLink)
+      .then(() => notify(`Referral link copied for ${doctor.name}.`))
+      .catch(() => notify('Clipboard access is unavailable in this browser.'));
   }
 }
 
