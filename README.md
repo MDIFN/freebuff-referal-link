@@ -2,6 +2,18 @@
 
 A responsive, dependency-free pharmacy operations demo. Open `index.html` in a browser to sign in to the role-aware workspace. All displayed prices use INR.
 
+## Optional pharmacy price refresh
+
+The app can use a small Node.js sidecar to refresh configured products from direct product pages. It does not scrape search pages: 1mg and PharmEasy disallow their search paths in `robots.txt`. Only HTTPS URLs on 1mg, PharmEasy, Netmeds, or Apollo Pharmacy are accepted; each source's `robots.txt` is checked before fetching. Prices are applied only when the page contains a matching Product JSON-LD offer in INR that is not marked out of stock. Unverified products keep their existing local price.
+
+Use Node.js 20 or newer:
+
+1. Copy `.env.example` to `.env` and replace the example URL with the direct product page for that generic. Repeat entries for products that have verified source pages.
+2. Run `PORT=8001 node --env-file=.env server.js` and open `http://localhost:8001` instead of opening `index.html` as a file. Choose another free port if needed.
+3. Run `node --test server.test.js` to test the endpoint and parser.
+
+The server-side refresh is optional. The original curated catalog remains available if the server is stopped or a price cannot be verified. This demo server has no user authentication; do not expose it publicly without adding appropriate access controls, rate limits, and product-price review.
+
 ## Page previews
 
 | Sign in | Overview |

@@ -74,10 +74,10 @@ function loadData() {
 }
 
 const data = loadData();
-const state = { view: 'overview', role: 'Admin', employeeId: null, inventoryQuery: '', patientQuery: '', doctorQuery: '', supplierQuery: '', prescriptionFilter: 'All prescriptions', poFilter: 'All orders', globalQuery: '' };
+const state = { view: 'overview', role: 'Admin', employeeId: null, inventoryQuery: '', patientQuery: '', doctorQuery: '', supplierQuery: '', prescriptionFilter: 'All prescriptions', poFilter: 'All orders', globalQuery: '', posDiscountPercent: 0, posDiscountFlat: 0 };
 const permissions = {
   Admin: ['overview', 'pos', 'prescriptions', 'inventory', 'purchase-orders', 'patients', 'doctors', 'suppliers', 'reports', 'employees'],
-  Pharmacist: ['overview', 'prescriptions', 'inventory', 'purchase-orders', 'patients', 'doctors', 'reports'],
+  Pharmacist: ['overview', 'pos', 'prescriptions', 'inventory', 'purchase-orders', 'patients', 'doctors', 'reports'],
   Technician: ['overview', 'prescriptions', 'inventory', 'purchase-orders', 'patients', 'doctors', 'reports'],
   Cashier: ['overview', 'pos', 'inventory', 'reports']
 };
@@ -107,6 +107,105 @@ const initialsFor = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(
 const drugFor = (id) => data.drugs.find((drug) => drug.id === id);
 const doctorFor = (id) => data.doctors.find((doctor) => doctor.id === id);
 const doctorReferralLink = (doctor) => `https://freebuff.app/r/${encodeURIComponent((doctor?.id || 'doctor').toLowerCase())}`;
+const INDIAN_DRUG_CATALOG = [
+  { name: 'Paracetamol 650mg', generic: 'Paracetamol', category: 'Pain relief', price: 22.5, supplier: 'Apollo Pharmacy' },
+  { name: 'Cetrizine 10mg', generic: 'Cetirizine', category: 'Allergy', price: 28.0, supplier: 'PharmEasy' },
+  { name: 'Amoxicillin 500mg', generic: 'Amoxicillin', category: 'Antibiotic', price: 86.0, supplier: '1mg' },
+  { name: 'Atorvastatin 20mg', generic: 'Atorvastatin', category: 'Cardiovascular', price: 64.0, supplier: 'Netmeds' },
+  { name: 'Metformin 850mg', generic: 'Metformin', category: 'Diabetes care', price: 39.0, supplier: 'Netmeds' },
+  { name: 'Lisinopril 10mg', generic: 'Lisinopril', category: 'Cardiovascular', price: 54.5, supplier: 'Apollo Pharmacy' },
+  { name: 'Omeprazole 20mg', generic: 'Omeprazole', category: 'Gastrointestinal', price: 46.0, supplier: '1mg' },
+  { name: 'Ibuprofen 200mg', generic: 'Ibuprofen', category: 'Pain relief', price: 33.0, supplier: 'Apollo Pharmacy' },
+  { name: 'Vitamin D3 60k IU', generic: 'Cholecalciferol', category: 'Supplement', price: 94.0, supplier: 'PharmEasy' },
+  { name: 'Amlodipine 5mg', generic: 'Amlodipine', category: 'Cardiovascular', price: 48.0, supplier: 'Netmeds' }
+];
+
+function calculateSaleSummary(cartItems, discountPercent = 0, discountFlat = 0) {
+  const subtotal = cartItems.reduce((sum, line) => sum + (line.drug?.price || 0) * line.quantity, 0);
+  const percentDiscount = Math.max(0, Number(discountPercent) || 0);
+  const flatDiscount = Math.max(0, Number(discountFlat) || 0);
+  const percentValue = subtotal * (percentDiscount / 100);
+  const discount = Math.min(subtotal, percentValue + flatDiscount);
+  const taxable = Math.max(0, subtotal - discount);
+  const tax = taxable * .0825;
+  const total = taxable + tax;
+  return { subtotal, discount, tax, total, taxable };
+}
+
+function syncIndianDrugCatalog() {
+  let added = 0;
+  INDIAN_DRUG_CATALOG.forEach((entry) => {
+    const existing = data.drugs.find((drug) => drug.name.toLowerCase() === entry.name.toLowerCase() || drug.generic.toLowerCase() === entry.generic.toLowerCase());
+    if (existing) {
+      existing.category = entry.category;
+      existing.supplier = entry.supplier || existing.supplier;
+      return;
+    }
+    data.drugs.push({
+      id: `RX-${String(data.drugs.length + 1).padStart(3, '0')}`,
+      name: entry.name,
+      generic: entry.generic,
+      category: entry.category,
+      onHand: 40,
+      reorder: 20,
+      batch: `IND-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}`,
+      expiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
+      price: Number(entry.price),
+      priceSource: 'local-reference',
+      priceUpdatedAt: null,
+      supplier: entry.supplier
+    });
+    added += 1;
+  });
+  return added;
+}
+
+function drugPriceLabel(drug) {
+  if (!drug.priceSource?.startsWith('live:')) return 'Reference price';
+  const updatedAt = new Date(drug.priceUpdatedAt);
+  const timestamp = Number.isNaN(updatedAt.getTime()) ? 'time unavailable' : updatedAt.toLocaleString();
+  return `${drug.priceSource.slice(5)} · ${timestamp}`;
+}
+
+async function refreshIndianDrugCatalog(button) {
+  const originalLabel = button?.textContent || 'Sync INR catalog';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Checking sources…';
+  }
+  let liveUpdated = 0;
+  try {
+    const response = await fetch('/api/catalog/prices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ products: INDIAN_DRUG_CATALOG.map(({ name, generic }) => ({ name, generic })) })
+    });
+    if (!response.ok) throw new Error(`Price service returned ${response.status}`);
+    const result = await response.json();
+    syncIndianDrugCatalog();
+    result.prices?.forEach((price) => {
+      if (price.currency !== 'INR' || !(Number(price.price) > 0)) return;
+      const entry = INDIAN_DRUG_CATALOG.find((item) => item.generic.toLowerCase() === String(price.generic).toLowerCase());
+      if (!entry) return;
+      const drug = data.drugs.find((item) => item.generic.toLowerCase() === entry.generic.toLowerCase());
+      if (!drug) return;
+      drug.price = Number(price.price);
+      drug.priceSource = `live:${price.source || 'pharmacy product page'}`;
+      drug.priceUpdatedAt = price.updatedAt || result.checkedAt || new Date().toISOString();
+      liveUpdated += 1;
+    });
+  } catch {
+    syncIndianDrugCatalog();
+  }
+  save();
+  render();
+  if (liveUpdated) notify(`Verified ${liveUpdated} live INR price${liveUpdated === 1 ? '' : 's'}; other products use reference prices.`);
+  else notify('No live INR prices were verified. Local reference prices remain in use.');
+  if (button?.isConnected) {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
 
 async function copyTextToClipboard(text) {
   if (navigator.clipboard && window.isSecureContext) {
@@ -171,8 +270,8 @@ function setHeading() {
   $('#breadcrumb-current').textContent = isOverview ? 'Overview' : title;
   $('#page-eyebrow').textContent = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date()).toUpperCase();
   const headingActions = $('#heading-actions');
-  if (state.view === 'pos' && ['Admin', 'Cashier'].includes(state.role)) headingActions.innerHTML = `<button class="button" data-action="clear-cart">Clear basket</button>`;
-  else if (state.view === 'inventory' && ['Admin', 'Technician', 'Pharmacist'].includes(state.role)) headingActions.innerHTML = `<button class="button button-primary" data-action="receive-stock">＋ Receive stock</button>`;
+  if (state.view === 'pos' && ['Admin', 'Cashier', 'Pharmacist'].includes(state.role)) headingActions.innerHTML = `<button class="button" data-action="clear-cart">Clear basket</button>`;
+  else if (state.view === 'inventory' && ['Admin', 'Technician', 'Pharmacist'].includes(state.role)) headingActions.innerHTML = `<button class="button button-primary" data-action="receive-stock">＋ Receive stock</button><button class="button" data-action="sync-indian-catalog" style="margin-left:8px">Sync INR catalog</button>`;
   else if (state.view === 'patients' && ['Admin', 'Pharmacist', 'Technician'].includes(state.role)) headingActions.innerHTML = `<button class="button button-primary" data-action="add-patient">＋ Add patient</button>`;
   else if (state.view === 'doctors' && ['Admin', 'Pharmacist'].includes(state.role)) headingActions.innerHTML = `<button class="button button-primary" data-action="add-doctor">＋ Add doctor</button>`;
   else if (state.view === 'suppliers' && state.role === 'Admin') headingActions.innerHTML = `<button class="button button-primary" data-action="add-supplier">＋ Add supplier</button>`;
@@ -224,6 +323,16 @@ function render() {
     employees: renderEmployees
   };
   $('#content').innerHTML = (views[state.view] || renderOverview)();
+  if (state.view === 'inventory') {
+    const visibleDrugs = data.drugs.filter((drug) => `${drug.name} ${drug.generic} ${drug.category} ${drug.batch}`.toLowerCase().includes(state.inventoryQuery.toLowerCase()));
+    $$('#inventory-rows tr').forEach((row, index) => {
+      if (!visibleDrugs[index]) return;
+      const provenance = document.createElement('small');
+      provenance.className = 'cell-sub';
+      provenance.textContent = drugPriceLabel(visibleDrugs[index]);
+      row.children[5].append(provenance);
+    });
+  }
   if (state.view === 'pos' && state.role === 'Cashier') {
     const patientSelect = $('#pos-patient', $('#content'));
     if (patientSelect) {
@@ -296,11 +405,9 @@ function renderOverview() {
 
 function renderPos() {
   const cartItems = data.cart.map((line) => ({ ...line, drug: drugFor(line.drugId) })).filter((line) => line.drug);
-  const subtotal = cartItems.reduce((sum, line) => sum + line.drug.price * line.quantity, 0);
-  const tax = subtotal * .0825;
-  const total = subtotal + tax;
+  const summary = calculateSaleSummary(cartItems, state.posDiscountPercent, state.posDiscountFlat);
   return `<div class="pos-layout" style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,.8fr);gap:14px;align-items:start"><section class="panel"><div class="panel-heading"><div><h2>Choose products</h2><p>Search by name or generic</p></div><span class="status">${data.drugs.length} products</span></div><div class="panel-body"><label class="search-field" style="width:100%;margin-bottom:11px"><span>⌕</span><input id="pos-search" type="search" placeholder="Find a medication..."></label><div class="pos-products" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px">${data.drugs.filter((drug) => drug.onHand > 0).map((drug) => `<button class="quick-action pos-product" data-action="add-cart" data-id="${escapeHtml(drug.id)}" style="min-height:58px"><span class="medicine-mark">Rx</span><span style="min-width:0;flex:1;text-align:left"><strong style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px">${escapeHtml(drug.name)}</strong><small style="display:block;margin-top:4px;color:#87928a;font-size:8px">${drug.onHand} in stock</small></span><strong style="font-size:9px">${money(drug.price)}</strong></button>`).join('')}</div></div></section>
-    <section class="panel"><div class="panel-heading"><div><h2>Current sale</h2><p>${cartItems.length} product${cartItems.length === 1 ? '' : 's'} in basket</p></div><span class="status">${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span></div><div class="panel-body"><div class="form-field" style="margin-bottom:13px"><label for="pos-patient">Patient</label><select id="pos-patient"><option value="Walk-in customer">Walk-in customer</option>${data.patients.map((patient) => `<option value="${escapeHtml(patient.name)}">${escapeHtml(patient.name)} · ${escapeHtml(patient.id)}</option>`).join('')}</select></div>${cartItems.length ? cartItems.map((line) => `<div class="summary-line" style="align-items:center"><span style="flex:1"><strong>${escapeHtml(line.drug.name)}</strong><small class="cell-sub">${money(line.drug.price)} each</small></span><span class="table-actions"><button class="button button-small" data-action="cart-dec" data-id="${escapeHtml(line.drugId)}" aria-label="Decrease quantity">−</button><strong>${line.quantity}</strong><button class="button button-small" data-action="cart-inc" data-id="${escapeHtml(line.drugId)}" aria-label="Increase quantity">＋</button></span><strong style="min-width:54px;text-align:right">${money(line.drug.price * line.quantity)}</strong></div>`).join('') : `<div class="empty-state"><strong>Your basket is empty</strong>Select a product to start a sale.</div>`}<div style="margin-top:11px;padding-top:6px;border-top:1px solid #edf0ed"><div class="summary-line"><span>Subtotal</span><strong>${money(subtotal)}</strong></div><div class="summary-line"><span>Tax (8.25%)</span><strong>${money(tax)}</strong></div><div class="summary-line summary-total"><strong>Total due</strong><strong>${money(total)}</strong></div></div><div class="form-field" style="margin-top:12px"><label for="pos-payment">Payment method</label><select id="pos-payment"><option>Card</option><option>Cash</option><option>Insurance</option></select></div><button class="button button-primary" data-action="checkout" style="width:100%;margin-top:12px" ${cartItems.length ? '' : 'disabled'}>Charge ${money(total)}</button></div></section></div>`;
+    <section class="panel"><div class="panel-heading"><div><h2>Current sale</h2><p>${cartItems.length} product${cartItems.length === 1 ? '' : 's'} in basket</p></div><span class="status">${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span></div><div class="panel-body"><div class="form-field" style="margin-bottom:13px"><label for="pos-patient">Patient</label><select id="pos-patient"><option value="Walk-in customer">Walk-in customer</option>${data.patients.map((patient) => `<option value="${escapeHtml(patient.name)}">${escapeHtml(patient.name)} · ${escapeHtml(patient.id)}</option>`).join('')}</select></div>${cartItems.length ? cartItems.map((line) => `<div class="summary-line" style="align-items:center"><span style="flex:1"><strong>${escapeHtml(line.drug.name)}</strong><small class="cell-sub">${money(line.drug.price)} each</small></span><span class="table-actions"><button class="button button-small" data-action="cart-dec" data-id="${escapeHtml(line.drugId)}" aria-label="Decrease quantity">−</button><strong>${line.quantity}</strong><button class="button button-small" data-action="cart-inc" data-id="${escapeHtml(line.drugId)}" aria-label="Increase quantity">＋</button></span><strong style="min-width:54px;text-align:right">${money(line.drug.price * line.quantity)}</strong></div>`).join('') : `<div class="empty-state"><strong>Your basket is empty</strong>Select a product to start a sale.</div>`}<div style="margin-top:11px;padding-top:6px;border-top:1px solid #edf0ed"><div class="summary-line"><span>Subtotal</span><strong>${money(summary.subtotal)}</strong></div><div class="summary-line"><span>Discount</span><strong>− ${money(summary.discount)}</strong></div><div class="summary-line"><span>Tax (8.25%)</span><strong>${money(summary.tax)}</strong></div><div class="summary-line summary-total"><strong>Total due</strong><strong>${money(summary.total)}</strong></div></div><div class="form-field" style="margin-top:12px"><label for="pos-discount-percent">Discount %</label><input id="pos-discount-percent" type="number" min="0" max="100" step="0.5" value="${Number(state.posDiscountPercent).toString()}" /></div><div class="form-field" style="margin-top:8px"><label for="pos-discount-flat">Discount (₹)</label><input id="pos-discount-flat" type="number" min="0" step="0.5" value="${Number(state.posDiscountFlat).toString()}" /></div><div class="form-field" style="margin-top:12px"><label for="pos-payment">Payment method</label><select id="pos-payment"><option>Card</option><option>Cash</option><option>Insurance</option></select></div><button class="button button-primary" style="margin-top:12px;width:100%" data-action="checkout">Complete sale</button></div></section></div>`;
 }
 
 function renderInventory() {
@@ -487,7 +594,7 @@ function handleAction(action, id, element) {
   } else if (action === 'print-now') {
     window.print();
   } else if (action === 'add-cart') {
-    if (!['Admin', 'Cashier'].includes(role)) return notify('Your role cannot process a sale.');
+    if (!['Admin', 'Cashier', 'Pharmacist'].includes(role)) return notify('Your role cannot process a sale.');
     const drug = drugFor(id);
     if (!drug || drug.onHand < 1) return notify('This product is out of stock.');
     const line = data.cart.find((item) => item.drugId === id);
@@ -505,17 +612,22 @@ function handleAction(action, id, element) {
     data.cart = data.cart.filter((item) => item.quantity > 0);
     render();
   } else if (action === 'clear-cart') {
+    state.posDiscountPercent = 0;
+    state.posDiscountFlat = 0;
     data.cart = []; render();
   } else if (action === 'checkout') {
     if (!data.cart.length) return;
-    if (!['Admin', 'Cashier'].includes(role)) return notify('Your role cannot process a sale.');
+    if (!['Admin', 'Cashier', 'Pharmacist'].includes(role)) return notify('Your role cannot process a sale.');
     const invalid = data.cart.find((line) => !drugFor(line.drugId) || drugFor(line.drugId).onHand < line.quantity);
     if (invalid) return notify('Stock changed. Review the basket and try again.');
-    const subtotal = data.cart.reduce((sum, line) => sum + drugFor(line.drugId).price * line.quantity, 0);
-    const total = subtotal * 1.0825;
+    const cartItems = data.cart.map((line) => ({ ...line, drug: drugFor(line.drugId) })).filter((line) => line.drug);
+    const summary = calculateSaleSummary(cartItems, state.posDiscountPercent, state.posDiscountFlat);
     data.cart.forEach((line) => { drugFor(line.drugId).onHand -= line.quantity; });
-    const sale = { id: `INV-${8292 + data.sales.length - 4}`, patient: $('#pos-patient')?.value || 'Walk-in customer', time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }), items: data.cart.reduce((sum, line) => sum + line.quantity, 0), total, payment: $('#pos-payment')?.value || 'Card', status: 'Paid', employeeId: state.employeeId };
-    data.sales.unshift(sale); data.cart = []; save(); render(); notify(`Sale ${sale.id} complete. Inventory updated.`);
+    const sale = { id: `INV-${8292 + data.sales.length - 4}`, patient: $('#pos-patient')?.value || 'Walk-in customer', time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }), items: data.cart.reduce((sum, line) => sum + line.quantity, 0), total: summary.total, payment: $('#pos-payment')?.value || 'Card', status: 'Paid', employeeId: state.employeeId, discount: summary.discount };
+    data.sales.unshift(sale);
+    state.posDiscountPercent = 0;
+    state.posDiscountFlat = 0;
+    data.cart = []; save(); render(); notify(`Sale ${sale.id} complete. Inventory updated.`);
   } else if (action === 'approve-rx' && ['Admin', 'Pharmacist'].includes(role)) {
     const rx = data.prescriptions.find((item) => item.id === id);
     if (!rx || rx.status !== 'Pending review') return;
@@ -540,6 +652,9 @@ function handleAction(action, id, element) {
     copyTextToClipboard(referralLink)
       .then(() => notify(`Referral link copied for ${doctor.name}.`))
       .catch(() => notify('Clipboard access is unavailable in this browser.'));
+  } else if (action === 'sync-indian-catalog') {
+    if (!['Admin', 'Pharmacist'].includes(role)) return notify('Only admin and pharmacist accounts can update the catalog.');
+    refreshIndianDrugCatalog(element);
   }
 }
 
@@ -688,6 +803,14 @@ document.addEventListener('input', (event) => {
   } else if (input.id === 'pos-search') {
     const query = input.value.toLowerCase();
     $$('.pos-product').forEach((button) => { button.hidden = !button.textContent.toLowerCase().includes(query); });
+  } else if (input.id === 'pos-discount-percent') {
+    const value = Number(input.value) || 0;
+    state.posDiscountPercent = Math.min(100, Math.max(0, value));
+    render();
+  } else if (input.id === 'pos-discount-flat') {
+    const value = Number(input.value) || 0;
+    state.posDiscountFlat = Math.max(0, value);
+    render();
   } else if (input.id === 'global-search') {
     state.globalQuery = input.value.trim().toLowerCase();
     if (state.globalQuery.length < 2) return;
